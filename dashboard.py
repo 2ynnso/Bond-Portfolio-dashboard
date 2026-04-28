@@ -255,17 +255,20 @@ def safe_zscore(series: pd.Series) -> pd.Series:
 
 
 def define_hierarchical_regime(row: pd.Series) -> int | float:
-    if row["VIX"] > 30:
+    vix = row.get("VIX", np.nan)
+    if pd.notna(vix) and vix > 30:
         return 4
 
     # OAS_Z가 양수면 Credit 스트레스가 있어야 위험(리스크오프)로 판단
-    if row["OAS_Z"] >= 0:
+    oas_z = row.get("OAS_Z", np.nan)
+    if pd.notna(oas_z) and oas_z >= 0:
         return 3
 
     # PPR가 낮으면 공격적 매수, 높으면 방어적(리스크오프)
-    if row["PPR"] < 0.2:
+    ppr = row.get("PPR", np.nan)
+    if pd.notna(ppr) and ppr < 0.2:
         return 1
-    if row["PPR"] > 0.8:
+    if pd.notna(ppr) and ppr > 0.8:
         return 4
 
     return 2
