@@ -61,6 +61,7 @@ with st.sidebar:
             min_value=0.55, max_value=0.95,
             value=DEFAULT_THRESHOLDS["ppr_high"], step=0.05,
         )
+        st.caption(f"현재: VIX>{vix_thresh:.0f} | OAS_Z≥{oas_z_thresh:.1f} | PPR<{ppr_low:.2f} or >{ppr_high:.2f}")
 
     if st.button("데이터 새로고침", type="primary"):
         st.cache_data.clear()
@@ -183,11 +184,21 @@ with g2:
 line_chart(macro, ["UST_10Y_2Y"], "Curve Slope History", ["#3b82f6"])
 
 # ── Recent Signal Table ───────────────────────────────────────────────────────
-signal_history = macro[
-    [c for c in ["VIX", "OAS_Z", "PPR", "UST_10Y_2Y", "regime", "regime_detailed"] if c in macro.columns]
-].tail(12)
 st.subheader("Recent Signal Table")
-render_recent_signal_table(signal_history.reset_index())
+
+_total_rows = len(macro)
+_row_options = [20, 60, 120, 250, _total_rows]
+_row_labels = {20: "20행", 60: "60행", 120: "120행 (약 6개월)", 250: "250행 (약 1년)", _total_rows: f"전체 ({_total_rows}행)"}
+n_rows = st.select_slider(
+    "표시할 행 수",
+    options=_row_options,
+    value=60,
+    format_func=lambda x: _row_labels.get(x, f"{x}행"),
+)
+
+signal_cols = [c for c in ["VIX", "OAS_Z", "PPR", "UST_10Y_2Y", "regime", "regime_detailed"] if c in macro.columns]
+signal_history = macro[signal_cols].tail(n_rows).iloc[::-1]  # 최신 데이터가 위로
+render_recent_signal_table(signal_history.reset_index(), max_height="520px")
 
 # ── CSV Download ──────────────────────────────────────────────────────────────
 st.markdown("---")

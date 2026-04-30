@@ -5,6 +5,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from config import CARD_BG, CARD_BORDER, REGIME_COLORS, REGIME_LABELS
+from signals import format_value
 
 
 def inject_css() -> None:
@@ -184,7 +185,6 @@ def render_yield_panel(title: str, data: dict[str, float], columns_per_row: int 
         cols = st.columns(columns_per_row)
         for idx, col in enumerate(cols):
             if idx < len(row_labels):
-                from signals import format_value
                 with col:
                     st.metric(row_labels[idx], format_value(row_values[idx], "%"))
 
@@ -204,7 +204,7 @@ def render_snapshot_board(title: str, items: list[dict[str, str]], columns_per_r
                         st.metric(item["label"], item["value"], delta=delta_float, border=True)
 
 
-def render_recent_signal_table(frame: pd.DataFrame) -> None:
+def render_recent_signal_table(frame: pd.DataFrame, max_height: str = "480px") -> None:
     display = frame.copy()
     if "index" in display.columns:
         display = display.rename(columns={"index": "date"})
@@ -222,7 +222,11 @@ def render_recent_signal_table(frame: pd.DataFrame) -> None:
                 lambda x, f=fmt: "N/A" if pd.isna(x) else f.format(x)
             )
     html = display.to_html(index=False, escape=False, classes="recent-table")
-    st.markdown(f'<div class="recent-table-wrap">{html}</div>', unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="recent-table-wrap" style="max-height:{max_height}; overflow-y:auto;">'
+        f"{html}</div>",
+        unsafe_allow_html=True,
+    )
 
 
 def line_chart(frame: pd.DataFrame, columns: list[str], title: str, colors: list[str]) -> None:
