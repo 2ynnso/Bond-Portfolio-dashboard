@@ -11,6 +11,7 @@ from signals import (
     classify_regime_detailed,
     classify_spread,
     classify_vix,
+    compute_oas_z,
     compute_regimes,
     format_delta,
     format_signed,
@@ -39,6 +40,16 @@ with st.sidebar:
     st.header("Control")
     years = st.slider("조회 기간(년)", 1, 15, 8)
     include_ppr = st.toggle("PPR(SHYG) 포함", value=True)
+
+    st.markdown("**OAS Z 롤링 윈도우**")
+    oas_window = st.radio(
+        "OAS Z 롤링 윈도우",
+        options=[12, 24, 36],
+        index=1,
+        format_func=lambda x: f"{x}M",
+        horizontal=True,
+        label_visibility="collapsed",
+    )
 
     with st.expander("Regime 임계값 설정"):
         vix_thresh = st.slider(
@@ -87,8 +98,9 @@ if macro_raw.empty:
     st.error("데이터를 불러오지 못했습니다.")
     st.stop()
 
-# regime 계산은 캐시 밖에서 — 임계값이 바뀌면 즉시 반영
-macro = compute_regimes(macro_raw, vix_thresh, oas_z_thresh, ppr_low, ppr_high)
+# OAS_Z·regime 계산은 캐시 밖에서 — 윈도우·임계값이 바뀌면 즉시 반영
+macro_with_oas = compute_oas_z(macro_raw, oas_window)
+macro = compute_regimes(macro_with_oas, vix_thresh, oas_z_thresh, ppr_low, ppr_high)
 
 latest = macro.dropna(how="all").iloc[-1]
 latest_date = macro.index.max().strftime("%Y-%m-%d")

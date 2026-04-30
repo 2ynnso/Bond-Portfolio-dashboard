@@ -71,9 +71,7 @@ def fetch_fred_api(start_date: pd.Timestamp, api_key: str) -> tuple[pd.DataFrame
 
     macro = pd.concat(frames, axis=1).sort_index().ffill()
     macro["HY_OAS_Z"] = safe_zscore(macro["HY_OAS"])
-    macro["OAS_Z"] = macro["HY_OAS"].rolling(24, min_periods=6).apply(
-        lambda x: (x.iloc[-1] - x.mean()) / x.std() if len(x) > 1 and x.std() > 0 else np.nan
-    )
+    # OAS_Z는 rolling window가 가변적이므로 캐시 밖(compute_oas_z)에서 계산
     return macro, warnings
 
 

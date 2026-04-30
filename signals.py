@@ -98,6 +98,15 @@ def define_hierarchical_regime(
     return 2
 
 
+def compute_oas_z(macro: pd.DataFrame, window: int) -> pd.DataFrame:
+    macro = macro.copy()
+    min_periods = max(6, window // 4)
+    macro["OAS_Z"] = macro["HY_OAS"].rolling(window, min_periods=min_periods).apply(
+        lambda x: (x.iloc[-1] - x.mean()) / x.std() if len(x) > 1 and x.std() > 0 else np.nan
+    )
+    return macro
+
+
 def compute_regimes(
     macro: pd.DataFrame,
     vix_thresh: float = DEFAULT_THRESHOLDS["vix"],
