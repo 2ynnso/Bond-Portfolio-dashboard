@@ -209,12 +209,14 @@ line_chart(macro, ["UST_10Y_2Y"], "Curve Slope History", ["#3b82f6"], dark=dark)
 st.subheader("Recent Signal Table")
 
 _total_rows = len(macro)
-_row_options = [20, 60, 120, 250, _total_rows]
+_base = [20, 60, 120, 250]
+_row_options = sorted(set(_base + [_total_rows]))
 _row_labels = {20: "20행", 60: "60행", 120: "약 6개월", 250: "약 1년", _total_rows: f"전체 ({_total_rows}행)"}
+_default = 60 if 60 in _row_options else _row_options[0]
 n_rows = st.select_slider(
     "표시할 행 수",
     options=_row_options,
-    value=60,
+    value=_default,
     format_func=lambda x: _row_labels.get(x, f"{x}행"),
 )
 
