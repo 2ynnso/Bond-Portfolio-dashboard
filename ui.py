@@ -4,136 +4,276 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from config import CARD_BG, CARD_BORDER, REGIME_COLORS, REGIME_LABELS
+from config import CARD_BG, CARD_BG_LIGHT, CARD_BORDER, CARD_BORDER_LIGHT, REGIME_COLORS, REGIME_LABELS
 from signals import format_value
 
+# ── Theme color dicts ─────────────────────────────────────────────────────────
+_T_DARK: dict[str, str] = {
+    "bg_app":             "#000000",
+    "bg_sidebar":         "#111111",
+    "sidebar_border":     "#333333",
+    "text_primary":       "#ffffff",
+    "text_secondary":     "#cccccc",
+    "divider":            "linear-gradient(90deg,rgba(255,255,255,0.2),rgba(255,255,255,0.05))",
+    "table_wrap_bg":      "#050505",
+    "table_wrap_border":  "#2a2a2a",
+    "thead_bg":           "#111111",
+    "thead_text":         "#d1d5db",
+    "thead_border":       "#2a2a2a",
+    "tbody_text":         "#f9fafb",
+    "tbody_border":       "#1b1b1b",
+    "row_odd":            "#080808",
+    "row_even":           "#0d0d0d",
+    "row_hover":          "#161616",
+    "metric_bg":          "rgba(30,30,30,0.5)",
+    "metric_border":      "#333333",
+    "card_text":          "#ffffff",
+    "card_label":         "#aaaaaa",
+    "card_note":          "#888888",
+    "plot_paper":         "#111111",
+    "plot_bg":            "#000000",
+    "plot_axis":          "#888888",
+    "plot_grid":          "rgba(255,255,255,0.1)",
+    "shadow":             "0 12px 24px rgba(0,0,0,0.8)",
+}
 
-def inject_css() -> None:
+_T_LIGHT: dict[str, str] = {
+    "bg_app":             "#f0f4f8",
+    "bg_sidebar":         "#ffffff",
+    "sidebar_border":     "#e2e8f0",
+    "text_primary":       "#111111",
+    "text_secondary":     "#4b5563",
+    "divider":            "linear-gradient(90deg,rgba(0,0,0,0.12),rgba(0,0,0,0.04))",
+    "table_wrap_bg":      "#ffffff",
+    "table_wrap_border":  "#e5e7eb",
+    "thead_bg":           "#f3f4f6",
+    "thead_text":         "#374151",
+    "thead_border":       "#e5e7eb",
+    "tbody_text":         "#111111",
+    "tbody_border":       "#efefef",
+    "row_odd":            "#ffffff",
+    "row_even":           "#f9fafb",
+    "row_hover":          "#f0f4f8",
+    "metric_bg":          "#ffffff",
+    "metric_border":      "#e2e8f0",
+    "card_text":          "#111111",
+    "card_label":         "#6b7280",
+    "card_note":          "#9ca3af",
+    "plot_paper":         "#ffffff",
+    "plot_bg":            "#f8fafc",
+    "plot_axis":          "#666666",
+    "plot_grid":          "rgba(0,0,0,0.07)",
+    "shadow":             "0 4px 16px rgba(0,0,0,0.08)",
+}
+
+
+def _t(dark: bool) -> dict[str, str]:
+    return _T_DARK if dark else _T_LIGHT
+
+
+def inject_css(dark: bool = True) -> None:
+    t = _t(dark)
     st.markdown(
-        """
+        f"""
         <style>
-        .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
-            background: #000000;
-            color: #ffffff;
-        }
-        .block-container {max-width: 1380px; padding-top: 2.3rem; padding-bottom: 2rem;}
-        [data-testid="stSidebar"] {
-            background: #111111;
-            border-right: 1px solid #333333;
-        }
-        .hero { padding: 10px 0 18px 0; }
-        .hero-title {
+        /* ── App / Layout ── */
+        .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {{
+            background: {t['bg_app']} !important;
+        }}
+        .block-container {{
+            max-width: 1380px;
+            padding-top: 2.3rem;
+            padding-bottom: 2rem;
+        }}
+
+        /* ── Sidebar ── */
+        [data-testid="stSidebar"] {{
+            background: {t['bg_sidebar']} !important;
+            border-right: 1px solid {t['sidebar_border']};
+        }}
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] p,
+        [data-testid="stSidebar"] span {{
+            color: {t['text_primary']} !important;
+        }}
+        [data-testid="stSidebar"] [data-baseweb="select"] > div,
+        [data-testid="stSidebar"] .stTextInput input,
+        [data-testid="stSidebar"] .stNumberInput input {{
+            background: {t['bg_sidebar']} !important;
+            color: {t['text_primary']} !important;
+            border-color: {t['sidebar_border']} !important;
+        }}
+
+        /* ── Buttons (fix invisible button issue) ── */
+        button[kind="secondary"] {{
+            background: {t['metric_bg']} !important;
+            color: {t['text_primary']} !important;
+            border: 1px solid {t['metric_border']} !important;
+            border-radius: 8px;
+        }}
+        button[kind="secondary"]:hover {{
+            border-color: {t['text_secondary']} !important;
+            opacity: 0.85;
+        }}
+        button[kind="primary"] {{
+            background: #2563eb !important;
+            color: #ffffff !important;
+            border: 1px solid #2563eb !important;
+            border-radius: 8px;
+        }}
+        button[kind="primary"]:hover {{
+            background: #1d4ed8 !important;
+        }}
+
+        /* ── Hero ── */
+        .hero {{ padding: 10px 0 18px 0; }}
+        .hero-title {{
             font-size: 2.55rem;
             font-weight: 800;
             line-height: 1.12;
             margin-bottom: 12px;
-            color: #ffffff;
+            color: {t['text_primary']};
             padding-top: 4px;
-        }
-        .hero-sub {
+        }}
+        .hero-sub {{
             font-size: 1rem;
-            color: #cccccc;
+            color: {t['text_secondary']};
             max-width: 760px;
             line-height: 1.45;
             margin-bottom: 2px;
-        }
-        .section-divider {
+        }}
+
+        /* ── Divider ── */
+        .section-divider {{
             height: 1px;
             width: 100%;
             margin: 34px 0 56px 0;
-            background: linear-gradient(90deg, rgba(255,255,255,0.2), rgba(255,255,255,0.1));
-        }
-        .recent-table-wrap {
-            border: 1px solid #2a2a2a;
+            background: {t['divider']};
+        }}
+
+        /* ── Signal Table ── */
+        .recent-table-wrap {{
+            border: 1px solid {t['table_wrap_border']};
             border-radius: 18px;
-            background: #050505;
+            background: {t['table_wrap_bg']};
             overflow-x: auto;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
-        }
-        .recent-table {
+        }}
+        .recent-table {{
             width: 100%;
             border-collapse: separate;
             border-spacing: 0;
-            color: #f3f4f6;
             font-size: 0.98rem;
-            background: #050505;
-        }
-        .recent-table thead th {
+            background: {t['table_wrap_bg']};
+        }}
+        .recent-table thead th {{
             position: sticky;
             top: 0;
-            background: #111111;
-            color: #d1d5db;
+            background: {t['thead_bg']};
+            color: {t['thead_text']};
             font-weight: 700;
             text-align: left;
             padding: 14px 16px;
-            border-bottom: 1px solid #2a2a2a;
+            border-bottom: 1px solid {t['thead_border']};
             white-space: nowrap;
-        }
-        .recent-table tbody td {
+        }}
+        .recent-table tbody td {{
             padding: 14px 16px;
-            border-bottom: 1px solid #1b1b1b;
-            color: #f9fafb;
+            border-bottom: 1px solid {t['tbody_border']};
+            color: {t['tbody_text']};
             white-space: nowrap;
-        }
-        .recent-table tbody tr:nth-child(odd) td { background: #080808; }
-        .recent-table tbody tr:nth-child(even) td { background: #0d0d0d; }
-        .recent-table tbody tr:hover td { background: #161616; }
-        [data-testid="stSidebar"] label,
-        [data-testid="stSidebar"] p,
-        [data-testid="stSidebar"] span,
-        [data-testid="stSidebar"] div { color: #f3f4f6 !important; }
-        [data-testid="stSidebar"] [data-baseweb="select"] > div,
-        [data-testid="stSidebar"] .stTextInput input,
-        [data-testid="stSidebar"] .stNumberInput input {
-            background: #111111 !important;
-            color: #f9fafb !important;
-            border-color: #333333 !important;
-        }
-        [data-testid="stSidebar"] button { color: #f9fafb !important; }
-        .card {
+        }}
+        .recent-table tbody tr:nth-child(odd) td  {{ background: {t['row_odd']}; }}
+        .recent-table tbody tr:nth-child(even) td {{ background: {t['row_even']}; }}
+        .recent-table tbody tr:hover td           {{ background: {t['row_hover']}; }}
+
+        /* ── Cards ── */
+        .card {{
             border-radius: 18px;
             padding: 18px;
             min-height: 150px;
-            border: 1px solid #333333;
-            box-shadow: 0 12px 24px rgba(0,0,0,0.8);
-            background: rgba(0,0,0,0.7);
-        }
-        .card-label {
+            border: 1px solid {t['metric_border']};
+            box-shadow: {t['shadow']};
+        }}
+        .card-label {{
             font-size: 0.82rem;
             font-weight: 700;
             letter-spacing: 0.05em;
             text-transform: uppercase;
-            color: #aaaaaa;
-        }
-        .card-value {
+            color: {t['card_label']};
+        }}
+        .card-value {{
             margin-top: 10px;
             font-size: 2rem;
             font-weight: 800;
             line-height: 1.0;
-            color: #ffffff;
-        }
-        .card-status { margin-top: 12px; font-size: 1rem; font-weight: 700; color: #ffffff; }
-        .card-note { margin-top: 8px; font-size: 0.84rem; color: #888888; line-height: 1.4; }
-        .regime-card { min-height: 200px; display: flex; flex-direction: column; justify-content: space-between; }
-        .regime-value { margin-top: 12px; font-size: 2.8rem; font-weight: 900; line-height: 1.1; color: #ffffff; }
-        .panel { border-radius: 16px; padding: 14px 16px; border: 1px solid #333333; background: rgba(0,0,0,0.5); }
-        h1, h2, h3, p, label, span, div { color: #ffffff; }
-        .stMetric { background: rgba(0,0,0,0.3); border: 1px solid #333333; border-radius: 10px; }
-        .stDataFrame { background: rgba(0,0,0,0.3); border: 1px solid #333333; }
-        [data-testid="stDataFrameContainer"] { color: #ffffff; }
-        table { color: #ffffff; }
-        th { color: #cccccc; background: rgba(0,0,0,0.5) !important; }
-        td { color: #ffffff; }
+            color: {t['card_text']};
+        }}
+        .card-status {{
+            margin-top: 12px;
+            font-size: 1rem;
+            font-weight: 700;
+            color: {t['card_text']};
+        }}
+        .card-note {{
+            margin-top: 8px;
+            font-size: 0.84rem;
+            color: {t['card_note']};
+            line-height: 1.4;
+        }}
+        .regime-card {{
+            min-height: 200px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }}
+        .regime-value {{
+            margin-top: 12px;
+            font-size: 2.8rem;
+            font-weight: 900;
+            line-height: 1.1;
+            color: {t['card_text']};
+        }}
+
+        /* ── Metric widgets ── */
+        [data-testid="stMetric"] {{
+            background: {t['metric_bg']} !important;
+            border: 1px solid {t['metric_border']} !important;
+            border-radius: 10px;
+        }}
+        [data-testid="stMetricLabel"] p,
+        [data-testid="stMetricValue"],
+        [data-testid="stMetricDelta"] {{
+            color: {t['text_primary']} !important;
+        }}
+
+        /* ── Bordered container (snapshot boards) ── */
+        [data-testid="stVerticalBlockBorderWrapper"] > div {{
+            border-color: {t['metric_border']} !important;
+            background: {t['metric_bg']};
+            border-radius: 12px;
+        }}
+
+        /* ── General text ── */
+        h1, h2, h3 {{ color: {t['text_primary']} !important; }}
+        p {{ color: {t['text_secondary']}; }}
+
+        /* ── DataFrame ── */
+        .stDataFrame {{ background: {t['metric_bg']}; border: 1px solid {t['metric_border']}; }}
+        table {{ color: {t['tbody_text']}; }}
+        th {{ color: {t['thead_text']} !important; background: {t['thead_bg']} !important; }}
+        td {{ color: {t['tbody_text']}; }}
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
-def render_card(title: str, value: str, status: str, note: str, tone: str) -> None:
+def render_card(title: str, value: str, status: str, note: str, tone: str, dark: bool = True) -> None:
+    bg = (CARD_BG if dark else CARD_BG_LIGHT)[tone]
+    border = (CARD_BORDER if dark else CARD_BORDER_LIGHT)[tone]
     st.markdown(
         f"""
-        <div class="card" style="background:{CARD_BG[tone]}; border-color:{CARD_BORDER[tone]};">
+        <div class="card" style="background:{bg}; border-color:{border};">
             <div class="card-label">{title}</div>
             <div class="card-value">{value}</div>
             <div class="card-status">{status}</div>
@@ -144,10 +284,12 @@ def render_card(title: str, value: str, status: str, note: str, tone: str) -> No
     )
 
 
-def render_regime_card(regime_name: str, note: str, risk_score: str, tone: str) -> None:
+def render_regime_card(regime_name: str, note: str, risk_score: str, tone: str, dark: bool = True) -> None:
+    bg = (CARD_BG if dark else CARD_BG_LIGHT)[tone]
+    border = (CARD_BORDER if dark else CARD_BORDER_LIGHT)[tone]
     st.markdown(
         f"""
-        <div class="card regime-card" style="background:{CARD_BG[tone]}; border-color:{CARD_BORDER[tone]};">
+        <div class="card regime-card" style="background:{bg}; border-color:{border};">
             <div class="card-label">CURRENT REGIME</div>
             <div class="regime-value">{regime_name}</div>
             <div class="card-status">{note}</div>
@@ -229,7 +371,14 @@ def render_recent_signal_table(frame: pd.DataFrame, max_height: str = "480px") -
     )
 
 
-def line_chart(frame: pd.DataFrame, columns: list[str], title: str, colors: list[str]) -> None:
+def line_chart(
+    frame: pd.DataFrame,
+    columns: list[str],
+    title: str,
+    colors: list[str],
+    dark: bool = True,
+) -> None:
+    t = _t(dark)
     selected = [c for c in columns if c in frame.columns]
     if not selected:
         st.info(f"{title} 데이터가 없습니다.")
@@ -255,15 +404,15 @@ def line_chart(frame: pd.DataFrame, columns: list[str], title: str, colors: list
             )
         )
     fig.update_layout(
-        title=dict(text=title, x=0, y=0.96, xanchor="left", yanchor="top", font=dict(size=20, color="#ffffff")),
+        title=dict(text=title, x=0, y=0.96, xanchor="left", yanchor="top", font=dict(size=20, color=t["text_primary"])),
         height=340,
         margin=dict(l=18, r=18, t=128, b=18),
-        legend=dict(orientation="h", yanchor="bottom", y=1.28, xanchor="left", x=0, font=dict(size=11, color="#cccccc")),
-        paper_bgcolor="#111111",
-        plot_bgcolor="#000000",
+        legend=dict(orientation="h", yanchor="bottom", y=1.28, xanchor="left", x=0, font=dict(size=11, color=t["text_secondary"])),
+        paper_bgcolor=t["plot_paper"],
+        plot_bgcolor=t["plot_bg"],
     )
-    fig.update_xaxes(showgrid=False, color="#888888")
-    fig.update_yaxes(gridcolor="rgba(255,255,255,0.1)", color="#888888")
+    fig.update_xaxes(showgrid=False, color=t["plot_axis"])
+    fig.update_yaxes(gridcolor=t["plot_grid"], color=t["plot_axis"])
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 
@@ -274,7 +423,9 @@ def signal_focus_chart(
     color: str,
     thresholds: list[tuple[float, str]],
     lookback: int = 260,
+    dark: bool = True,
 ) -> None:
+    t = _t(dark)
     if column not in frame.columns:
         st.info(f"{title} 데이터가 없습니다.")
         return
@@ -307,19 +458,20 @@ def signal_focus_chart(
 
     fig.update_layout(
         title=title,
-        title_font=dict(size=18, color="#ffffff"),
+        title_font=dict(size=18, color=t["text_primary"]),
         height=240,
         margin=dict(l=14, r=14, t=56, b=10),
         showlegend=False,
-        paper_bgcolor="#111111",
-        plot_bgcolor="#000000",
+        paper_bgcolor=t["plot_paper"],
+        plot_bgcolor=t["plot_bg"],
     )
-    fig.update_xaxes(showgrid=False, color="#888888")
-    fig.update_yaxes(gridcolor="rgba(255,255,255,0.1)", color="#888888")
+    fig.update_xaxes(showgrid=False, color=t["plot_axis"])
+    fig.update_yaxes(gridcolor=t["plot_grid"], color=t["plot_axis"])
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 
-def regime_history_chart(frame: pd.DataFrame) -> None:
+def regime_history_chart(frame: pd.DataFrame, dark: bool = True) -> None:
+    t = _t(dark)
     if "regime_code" not in frame.columns:
         st.info("Regime 데이터가 없습니다.")
         return
@@ -333,7 +485,6 @@ def regime_history_chart(frame: pd.DataFrame) -> None:
 
     fig = go.Figure()
 
-    # AGG를 오버레이로 표시
     if "AGG" in frame.columns:
         agg = pd.to_numeric(frame["AGG"], errors="coerce").dropna()
         if not agg.empty:
@@ -343,11 +494,10 @@ def regime_history_chart(frame: pd.DataFrame) -> None:
                     y=agg.values,
                     mode="lines",
                     name="AGG",
-                    line=dict(color="#facc15", width=1.5),
+                    line=dict(color="#facc15" if dark else "#d97706", width=1.5),
                 )
             )
 
-    # 연속된 동일 regime 구간을 묶어 vrect로 배경색 표시
     periods: list[tuple] = []
     prev_regime: int | None = None
     period_start = None
@@ -363,14 +513,12 @@ def regime_history_chart(frame: pd.DataFrame) -> None:
 
     for start, end, regime in periods:
         fig.add_vrect(
-            x0=start,
-            x1=end,
+            x0=start, x1=end,
             fillcolor=REGIME_COLORS.get(regime, "rgba(100,100,100,0.1)"),
             layer="below",
             line_width=0,
         )
 
-    # 범례용 더미 트레이스
     for code, label in REGIME_LABELS.items():
         color = REGIME_COLORS[code].replace("0.18", "0.7").replace("0.15", "0.7")
         fig.add_trace(
@@ -384,13 +532,13 @@ def regime_history_chart(frame: pd.DataFrame) -> None:
         )
 
     fig.update_layout(
-        title=dict(text="Regime History", x=0, y=0.97, xanchor="left", font=dict(size=20, color="#ffffff")),
+        title=dict(text="Regime History", x=0, y=0.97, xanchor="left", font=dict(size=20, color=t["text_primary"])),
         height=320,
         margin=dict(l=18, r=18, t=56, b=18),
-        paper_bgcolor="#111111",
-        plot_bgcolor="#000000",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, font=dict(size=11, color="#cccccc")),
+        paper_bgcolor=t["plot_paper"],
+        plot_bgcolor=t["plot_bg"],
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0, font=dict(size=11, color=t["text_secondary"])),
     )
-    fig.update_xaxes(showgrid=False, color="#888888")
-    fig.update_yaxes(gridcolor="rgba(255,255,255,0.1)", color="#888888")
+    fig.update_xaxes(showgrid=False, color=t["plot_axis"])
+    fig.update_yaxes(gridcolor=t["plot_grid"], color=t["plot_axis"])
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})

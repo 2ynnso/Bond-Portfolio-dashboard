@@ -59,3 +59,29 @@ DEFAULT_THRESHOLDS: dict[str, float] = {
     "ppr_low": 0.2,
     "ppr_high": 0.8,
 }
+
+CARD_BG_LIGHT: dict[str, str] = {
+    "good": "#dcfce7",
+    "neutral": "#dbeafe",
+    "bad": "#fee2e2",
+    "info": "#dbeafe",
+    "very_risk_on": "#bbf7d0",
+    "risk_on": "#cffafe",
+    "watch": "#fef9c3",
+    "risk_off": "#fef9c3",
+    "very_risk_off": "#fecaca",
+    "agg": "#f1f5f9",
+}
+
+CARD_BORDER_LIGHT: dict[str, str] = {
+    "good": "#16a34a",
+    "neutral": "#2563eb",
+    "bad": "#dc2626",
+    "info": "#2563eb",
+    "very_risk_on": "#15803d",
+    "risk_on": "#0891b2",
+    "watch": "#ca8a04",
+    "risk_off": "#ca8a04",
+    "very_risk_off": "#b91c1c",
+    "agg": "#94a3b8",
+}
