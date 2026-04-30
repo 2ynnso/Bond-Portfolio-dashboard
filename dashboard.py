@@ -33,17 +33,12 @@ from ui import (
 
 st.set_page_config(page_title="Bond Signal Board", page_icon=":bar_chart:", layout="wide")
 
-# ── Theme: session state로 다크/라이트 모드 유지 ────────────────────────────
-if "dark_mode" not in st.session_state:
-    st.session_state.dark_mode = True
-
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("Control")
 
-    # 다크/라이트 모드 토글 (가장 위에 배치)
-    st.toggle("🌙 Dark Mode", key="dark_mode")
-    dark = st.session_state.dark_mode
+    # 다크/라이트 모드 토글 — 반환값을 직접 사용 (session_state 충돌 방지)
+    dark = st.toggle("🌙 Dark Mode", value=True)
     st.divider()
 
     years = st.slider("조회 기간(년)", 1, 15, 8)
