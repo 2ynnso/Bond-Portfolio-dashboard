@@ -8,6 +8,7 @@ from data import build_dataset, get_fred_api_key
 from portfolio import (
     add_benchmark_nav,
     build_intraday_portfolio_return,
+    build_position_summary,
     build_portfolio_nav,
     compute_metrics,
     compute_today_stats,
@@ -37,6 +38,7 @@ from ui import (
     render_nav_chart,
     render_portfolio_hero,
     render_recent_signal_table,
+    render_regime_allocation_guide,
     render_regime_card,
     render_section_divider,
     render_snapshot_board,
@@ -49,7 +51,7 @@ st.set_page_config(page_title="Bond Signal Board", page_icon=":bar_chart:", layo
 with st.sidebar:
     st.header("Control")
 
-    dark = st.toggle("🌙 Dark Mode", value=True)
+    dark = st.toggle("🌙 Dark Mode", value=False)
     st.divider()
 
     years = st.slider("조회 기간(년)", 1, 15, 8)
@@ -141,6 +143,8 @@ with tab1:
         f"• PPR({format_value(latest_value(macro, 'PPR'))})"
     )
     render_regime_card(regime_detailed, regime_note, risk_score_detail, "info", dark=dark)
+    current_regime_code = int(latest["regime_code"]) if not pd.isna(latest.get("regime_code")) else None
+    render_regime_allocation_guide(current_regime_code, dark=dark)
 
     vix_tone, vix_status, vix_note = classify_vix(latest_value(macro, "VIX"), vix_thresh)
     oas_tone, oas_status, oas_note = classify_oas_z(latest_value(macro, "OAS_Z"), oas_z_thresh)
@@ -241,7 +245,7 @@ with tab1:
 # ═══════════════════════════════════════════════════════════════════════════════
 with tab2:
     st.markdown("### Portfolio Performance")
-    st.markdown("투자 포지션을 입력하고 AGG 대비 성과지표를 분석합니다.")
+    st.markdown("포지션별 매수일 기준 손익과 AGG 대비 성과지표를 함께 확인합니다.")
 
     # ── 입력 설정 ─────────────────────────────────────────────────────────────
     col_date, col_rf = st.columns([2, 1])
@@ -249,7 +253,7 @@ with tab2:
         invest_start = st.date_input(
             "투자 시작일",
             value=(pd.Timestamp.today() - pd.DateOffset(years=1)).date(),
-            max_value=(pd.Timestamp.today() - pd.Timedelta(days=30)).date(),
+            max_value=pd.Timestamp.today().date(),
             help="포트폴리오 NAV 산출 기준일 (이 날의 종가를 매입가로 사용)",
         )
     with col_rf:
@@ -262,12 +266,14 @@ with tab2:
             help="3M UST 최신값 자동 적용 (수동 조정 가능)",
         )
 
-    st.markdown("**포지션 입력** (Yahoo Finance 티커 + 투자금액 USD)")
-    st.caption("행을 추가/삭제해 포트폴리오를 구성하세요. AGG가 항상 Benchmark로 함께 표시됩니다.")
+    st.markdown("**포지션 입력**")
+    st.caption("통화가 KRW면 투자금액을 원화로 입력하세요. 환율은 투자 시작일의 USD/KRW를 자동 적용합니다.")
 
     _default_positions = pd.DataFrame({
-        "ticker": ["AGG", "HYG", "TLT"],
-        "amount": [10000.0, 5000.0, 5000.0],
+        "ticker": ["SHYG", "IEF", "TLT"],
+        "buy_date": [invest_start, invest_start, invest_start],
+        "currency": ["USD", "USD", "USD"],
+        "amount": [6000.0, 3000.0, 1000.0],
     })
 
     positions_df = st.data_editor(
@@ -275,14 +281,19 @@ with tab2:
         num_rows="dynamic",
         column_config={
             "ticker": st.column_config.TextColumn(
-                "티커", help="예: AGG, TLT, HYG, LQD, BND, SHYG", width="small"
+                "티커", help="예: SHYG, IEF, TLT, AGG, HYG, LQD", width="small"
+            ),
+            "buy_date": st.column_config.DateColumn(
+                "매수일", format="YYYY-MM-DD", width="small"
+            ),
+            "currency": st.column_config.SelectboxColumn(
+                "통화", options=["USD", "KRW"], required=True, width="small"
             ),
             "amount": st.column_config.NumberColumn(
-                "투자금액 (USD)", min_value=0.0, format="$%.0f", width="small"
+                "투자금액", min_value=0.0, format="%.0f", width="small"
             ),
         },
-        use_container_width=False,
-        width=420,
+        use_container_width=True,
     )
 
     calc_btn = st.button("📈 성과 계산", type="primary")
@@ -294,6 +305,7 @@ with tab2:
         st.session_state.bm_metrics = None
         st.session_state.pf_warns = []
         st.session_state.pf_positions = []
+        st.session_state.pf_position_summary = None
 
     # ── 계산 실행 ─────────────────────────────────────────────────────────────
     if calc_btn:
@@ -308,11 +320,14 @@ with tab2:
                 start_ts = pd.Timestamp(invest_start)
                 nav_df, warns = build_portfolio_nav(positions, start_ts)
                 if not nav_df.empty:
-                    nav_df = add_benchmark_nav(nav_df, start_ts)
+                    nav_df = add_benchmark_nav(nav_df, nav_df.index.min())
+                position_summary, summary_warns = build_position_summary(positions, start_ts)
+                warns = warns + summary_warns
 
             st.session_state.pf_nav = nav_df if not nav_df.empty else None
             st.session_state.pf_warns = warns
             st.session_state.pf_positions = positions
+            st.session_state.pf_position_summary = position_summary if not position_summary.empty else None
 
             if not nav_df.empty:
                 rf = rf_pct / 100
@@ -349,14 +364,40 @@ with tab2:
 
         render_section_divider()
 
-        # ④ 성과지표 비교
+        # ④ 포지션별 손익
+        position_summary = st.session_state.get("pf_position_summary")
+        if position_summary is not None and not position_summary.empty:
+            st.markdown("### 포지션별 손익")
+            st.dataframe(
+                position_summary.style.format(
+                    {
+                        "매수가": "${:,.2f}",
+                        "현재가": "${:,.2f}",
+                        "수량": "{:,.4f}",
+                        "매수금액 USD": "${:,.2f}",
+                        "평가금액 USD": "${:,.2f}",
+                        "달러 손익": "${:,.2f}",
+                        "달러 수익률": "{:.2%}",
+                        "투자시작 환율": "{:,.2f}",
+                        "현재환율": "{:,.2f}",
+                        "매수금액 KRW": "{:,.0f}",
+                        "평가금액 KRW": "{:,.0f}",
+                        "원화 손익": "{:,.0f}",
+                        "원화 수익률": "{:.2%}",
+                    }
+                ),
+                use_container_width=True,
+                height=245,
+            )
+
+        # ⑤ 성과지표 비교
         st.markdown("### 성과지표 비교 — Portfolio vs AGG Benchmark")
         render_metrics_comparison(
             st.session_state.pf_metrics or {},
             st.session_state.bm_metrics or {},
         )
 
-        # ⑤ NAV 데이터 테이블
+        # ⑥ NAV 데이터 테이블
         with st.expander("NAV 데이터 테이블 보기"):
             display_nav = nav_df.copy()
             display_nav.index = display_nav.index.strftime("%Y-%m-%d")

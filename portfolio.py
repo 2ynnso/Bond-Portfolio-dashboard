@@ -9,7 +9,8 @@ try:
 except Exception:
     yf = None
 
-_NAV_BASE = 1000
+_NAV_BASE = 100
+_FX_TICKER = "KRW=X"
 
 
 @st.cache_data(ttl=1800, show_spinner=False)
@@ -50,6 +51,44 @@ def fetch_price_history(ticker: str, start: str) -> pd.Series:
         return pd.Series(dtype=float, name=ticker)
 
 
+def _as_timestamp(value, fallback: pd.Timestamp) -> pd.Timestamp:
+    try:
+        if pd.isna(value):
+            return fallback
+    except TypeError:
+        pass
+    try:
+        return pd.Timestamp(value).tz_localize(None)
+    except Exception:
+        return fallback
+
+
+def _position_currency(pos: dict) -> str:
+    currency = str(pos.get("currency", "USD")).strip().upper()
+    return currency if currency in {"USD", "KRW"} else "USD"
+
+
+def _position_fx(fx_history: pd.Series, fx_date: pd.Timestamp) -> float:
+    if fx_history.empty:
+        return float("nan")
+    fx = fx_history[fx_history.index >= fx_date]
+    if fx.empty:
+        fx = fx_history
+    return float(fx.iloc[0]) if not fx.empty else float("nan")
+
+
+def _position_amounts(pos: dict, fx_at_buy: float) -> tuple[float, float]:
+    amount = float(pos.get("amount", 0.0) or 0.0)
+    currency = _position_currency(pos)
+    if amount <= 0:
+        return 0.0, 0.0
+    if currency == "KRW":
+        amount_usd = amount / fx_at_buy if fx_at_buy and not np.isnan(fx_at_buy) else 0.0
+        return amount_usd, amount
+    amount_krw = amount * fx_at_buy if fx_at_buy and not np.isnan(fx_at_buy) else float("nan")
+    return amount, amount_krw
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_intraday(ticker: str) -> pd.Series:
     """Fetch today's 5-minute close prices, converted to US/Eastern time."""
@@ -60,6 +99,7 @@ def fetch_intraday(ticker: str) -> pd.Series:
             ticker,
             period="1d",
             interval="5m",
+            auto_adjust=True,
             progress=False,
             threads=False,
             timeout=20,
@@ -98,46 +138,65 @@ def build_portfolio_nav(
     start_date: pd.Timestamp,
 ) -> tuple[pd.DataFrame, list[str]]:
     """
-    Compute portfolio NAV (base=1000) and individual ticker NAVs.
+    Compute portfolio NAV (base=100) and individual ticker NAVs.
     Returns (DataFrame columns=["Portfolio", ticker1, ...], warnings)
     """
     warns: list[str] = []
     price_dict: dict[str, pd.Series] = {}
+    clean_positions: list[dict] = []
 
     start_naive = start_date.tz_localize(None) if start_date.tzinfo else start_date
+    buy_dates = [_as_timestamp(pos.get("buy_date"), start_naive) for pos in positions]
+    fx_start = min(buy_dates + [start_naive]).strftime("%Y-%m-%d")
+    fx_history = fetch_price_history(_FX_TICKER, fx_start)
 
     for pos in positions:
         tkr = str(pos.get("ticker", "")).strip().upper()
-        amt = float(pos.get("amount", 0.0) or 0.0)
-        if not tkr or amt <= 0:
+        buy_date = _as_timestamp(pos.get("buy_date"), start_naive)
+        fx_at_buy = _position_fx(fx_history, start_naive)
+        amt_usd, _ = _position_amounts(pos, fx_at_buy)
+        if not tkr or amt_usd <= 0:
             continue
-        s = fetch_price_history(tkr, start_naive.strftime("%Y-%m-%d"))
+        s = fetch_price_history(tkr, buy_date.strftime("%Y-%m-%d"))
         if s.empty:
             warns.append(f"{tkr}: 가격 데이터를 가져오지 못했습니다.")
             continue
-        s = s[s.index >= start_naive]
+        s = s[s.index >= buy_date]
         if s.empty:
             warns.append(f"{tkr}: 선택한 기간의 데이터가 없습니다.")
             continue
-        price_dict[tkr] = s
+        if tkr not in price_dict or s.index[0] < price_dict[tkr].index[0]:
+            price_dict[tkr] = s
+        clean_positions.append(
+            {
+                "ticker": tkr,
+                "amount_usd": amt_usd,
+                "buy_date": buy_date,
+                "first_date": s.index[0],
+                "prices": s,
+            }
+        )
 
     if not price_dict:
         return pd.DataFrame(), warns
 
+    nav_start = max(pos["first_date"] for pos in clean_positions)
     all_dates = pd.DatetimeIndex(
-        sorted(set().union(*[set(s.index.tolist()) for s in price_dict.values()]))
+        sorted(set().union(*[set(pos["prices"][pos["prices"].index >= nav_start].index.tolist()) for pos in clean_positions]))
     )
+    if all_dates.empty:
+        return pd.DataFrame(), warns + ["포트폴리오 공통 산출 기간을 구성하지 못했습니다."]
 
     port_val = pd.Series(0.0, index=all_dates)
     any_added = False
 
-    for pos in positions:
-        tkr = str(pos.get("ticker", "")).strip().upper()
-        amt = float(pos.get("amount", 0.0) or 0.0)
-        if tkr not in price_dict or amt <= 0:
-            continue
-        p = price_dict[tkr].reindex(all_dates).ffill().bfill()
-        init = p.iloc[0]
+    for pos in clean_positions:
+        tkr = pos["ticker"]
+        amt = pos["amount_usd"]
+        prices = pos["prices"]
+        p = prices.reindex(all_dates).ffill().bfill()
+        buy_prices = prices[prices.index >= pos["buy_date"]]
+        init = buy_prices.iloc[0] if not buy_prices.empty else p.iloc[0]
         if pd.isna(init) or init <= 0:
             warns.append(f"{tkr}: 시작일 가격을 확인할 수 없습니다.")
             continue
@@ -157,8 +216,68 @@ def build_portfolio_nav(
     return nav_df, warns
 
 
+def build_position_summary(
+    positions: list[dict],
+    fallback_start: pd.Timestamp,
+) -> tuple[pd.DataFrame, list[str]]:
+    """Compute per-position USD/KRW P&L from each row's buy date."""
+    warns: list[str] = []
+    start_naive = fallback_start.tz_localize(None) if fallback_start.tzinfo else fallback_start
+    buy_dates = [_as_timestamp(pos.get("buy_date"), start_naive) for pos in positions]
+    fx_history = fetch_price_history(_FX_TICKER, min(buy_dates + [start_naive]).strftime("%Y-%m-%d"))
+    current_fx = float(fx_history.iloc[-1]) if not fx_history.empty else float("nan")
+
+    rows: list[dict] = []
+    for pos in positions:
+        tkr = str(pos.get("ticker", "")).strip().upper()
+        buy_date = _as_timestamp(pos.get("buy_date"), start_naive)
+        fx_at_buy = _position_fx(fx_history, start_naive)
+        amount_usd, amount_krw = _position_amounts(pos, fx_at_buy)
+        if not tkr or amount_usd <= 0:
+            continue
+
+        prices = fetch_price_history(tkr, buy_date.strftime("%Y-%m-%d"))
+        prices = prices[prices.index >= buy_date]
+        if prices.empty:
+            warns.append(f"{tkr}: 포지션 손익 계산용 가격 데이터가 없습니다.")
+            continue
+
+        buy_price = float(prices.iloc[0])
+        current_price = float(prices.iloc[-1])
+        shares = amount_usd / buy_price if buy_price > 0 else 0.0
+        value_usd = shares * current_price
+        pnl_usd = value_usd - amount_usd
+        ret_pct = pnl_usd / amount_usd if amount_usd else float("nan")
+        value_krw = value_usd * current_fx if not np.isnan(current_fx) else float("nan")
+        pnl_krw = value_krw - amount_krw if not np.isnan(value_krw) and not np.isnan(amount_krw) else float("nan")
+        krw_ret_pct = pnl_krw / amount_krw if amount_krw and not np.isnan(pnl_krw) else float("nan")
+
+        rows.append(
+            {
+                "티커": tkr,
+                "통화": _position_currency(pos),
+                "매수일": prices.index[0].strftime("%Y-%m-%d"),
+                "매수가": buy_price,
+                "현재가": current_price,
+                "수량": shares,
+                "매수금액 USD": amount_usd,
+                "평가금액 USD": value_usd,
+                "달러 손익": pnl_usd,
+                "달러 수익률": ret_pct,
+                "투자시작 환율": fx_at_buy,
+                "현재환율": current_fx,
+                "매수금액 KRW": amount_krw,
+                "평가금액 KRW": value_krw,
+                "원화 손익": pnl_krw,
+                "원화 수익률": krw_ret_pct,
+            }
+        )
+
+    return pd.DataFrame(rows), warns
+
+
 def add_benchmark_nav(nav_df: pd.DataFrame, start_date: pd.Timestamp) -> pd.DataFrame:
-    """Fetch AGG and add as benchmark column (base=1000) if not already present."""
+    """Fetch AGG and add as benchmark column (base=100) if not already present."""
     if "AGG" in nav_df.columns:
         return nav_df
     start_naive = start_date.tz_localize(None) if start_date.tzinfo else start_date

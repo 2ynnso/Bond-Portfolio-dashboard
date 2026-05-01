@@ -53,6 +53,14 @@ REGIME_COLORS: dict[int, str] = {
     4: "rgba(239,68,68,0.18)",
 }
 
+# 전략 레짐별 권장 포지션 비중 (티커, 비중%)
+REGIME_ALLOCATION: dict[int, list[tuple[str, int]]] = {
+    1: [("SHYG", 85), ("IEF", 15), ("TLT", 0)],
+    2: [("SHYG", 60), ("IEF", 40), ("TLT", 0)],
+    3: [("SHYG", 35), ("IEF", 65), ("TLT", 0)],
+    4: [("SHYG", 15), ("IEF", 75), ("TLT", 10)],
+}
+
 DEFAULT_THRESHOLDS: dict[str, float] = {
     "vix": 30.0,
     "oas_z": 0.0,

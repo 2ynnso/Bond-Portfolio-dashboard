@@ -5,7 +5,15 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from config import CARD_BG, CARD_BG_LIGHT, CARD_BORDER, CARD_BORDER_LIGHT, REGIME_COLORS, REGIME_LABELS
+from config import (
+    CARD_BG,
+    CARD_BG_LIGHT,
+    CARD_BORDER,
+    CARD_BORDER_LIGHT,
+    REGIME_ALLOCATION,
+    REGIME_COLORS,
+    REGIME_LABELS,
+)
 from signals import format_value
 
 # ── Theme color dicts ─────────────────────────────────────────────────────────
@@ -39,29 +47,29 @@ _T_DARK: dict[str, str] = {
 }
 
 _T_LIGHT: dict[str, str] = {
-    "bg_app":             "#f0f4f8",
-    "bg_sidebar":         "#ffffff",
+    "bg_app":             "#f7f8fb",
+    "bg_sidebar":         "#f7f8fb",
     "sidebar_border":     "#e2e8f0",
     "text_primary":       "#111111",
     "text_secondary":     "#4b5563",
     "divider":            "linear-gradient(90deg,rgba(0,0,0,0.12),rgba(0,0,0,0.04))",
-    "table_wrap_bg":      "#ffffff",
+    "table_wrap_bg":      "#f7f8fb",
     "table_wrap_border":  "#e5e7eb",
     "thead_bg":           "#f3f4f6",
     "thead_text":         "#374151",
     "thead_border":       "#e5e7eb",
     "tbody_text":         "#111111",
     "tbody_border":       "#efefef",
-    "row_odd":            "#ffffff",
-    "row_even":           "#f9fafb",
-    "row_hover":          "#f0f4f8",
-    "metric_bg":          "#ffffff",
+    "row_odd":            "#f7f8fb",
+    "row_even":           "#f7f8fb",
+    "row_hover":          "#eef2f7",
+    "metric_bg":          "#f7f8fb",
     "metric_border":      "#e2e8f0",
     "card_text":          "#111111",
     "card_label":         "#6b7280",
     "card_note":          "#9ca3af",
-    "plot_paper":         "#ffffff",
-    "plot_bg":            "#f8fafc",
+    "plot_paper":         "#f7f8fb",
+    "plot_bg":            "#f7f8fb",
     "plot_axis":          "#666666",
     "plot_grid":          "rgba(0,0,0,0.07)",
     "shadow":             "0 4px 16px rgba(0,0,0,0.08)",
@@ -78,13 +86,28 @@ def inject_css(dark: bool = True) -> None:
         f"""
         <style>
         /* ── App / Layout ── */
-        .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {{
+        .stApp,
+        [data-testid="stAppViewContainer"],
+        [data-testid="stHeader"],
+        [data-testid="stMain"],
+        [data-testid="stMainBlockContainer"],
+        [data-testid="stVerticalBlock"],
+        [data-testid="stHorizontalBlock"],
+        [data-testid="stTabs"],
+        [data-testid="stTabContent"],
+        section.main,
+        main {{
             background: {t['bg_app']} !important;
         }}
         .block-container {{
             max-width: 1380px;
             padding-top: 2.3rem;
             padding-bottom: 2rem;
+            background: {t['bg_app']} !important;
+        }}
+        div[data-baseweb="tab-list"],
+        div[data-baseweb="tab-panel"] {{
+            background: {t['bg_app']} !important;
         }}
 
         /* ── Sidebar ── */
@@ -148,14 +171,14 @@ def inject_css(dark: bool = True) -> None:
         .section-divider {{
             height: 1px;
             width: 100%;
-            margin: 34px 0 56px 0;
+            margin: 28px 0 38px 0;
             background: {t['divider']};
         }}
 
         /* ── Signal Table ── */
         .recent-table-wrap {{
             border: 1px solid {t['table_wrap_border']};
-            border-radius: 18px;
+            border-radius: 8px;
             background: {t['table_wrap_bg']};
             overflow-x: auto;
         }}
@@ -189,11 +212,11 @@ def inject_css(dark: bool = True) -> None:
 
         /* ── Cards ── */
         .card {{
-            border-radius: 18px;
+            border-radius: 8px;
             padding: 18px;
             min-height: 150px;
             border: 1px solid {t['metric_border']};
-            box-shadow: {t['shadow']};
+            box-shadow: none;
         }}
         .card-label {{
             font-size: 0.82rem;
@@ -239,11 +262,10 @@ def inject_css(dark: bool = True) -> None:
         [data-testid="stMetric"] {{
             background: {t['metric_bg']} !important;
             border: 1px solid {t['metric_border']} !important;
-            border-radius: 10px;
+            border-radius: 8px;
         }}
         [data-testid="stMetricLabel"] p,
-        [data-testid="stMetricValue"],
-        [data-testid="stMetricDelta"] {{
+        [data-testid="stMetricValue"] {{
             color: {t['text_primary']} !important;
         }}
 
@@ -251,7 +273,35 @@ def inject_css(dark: bool = True) -> None:
         [data-testid="stVerticalBlockBorderWrapper"] > div {{
             border-color: {t['metric_border']} !important;
             background: {t['metric_bg']};
-            border-radius: 12px;
+            border-radius: 8px;
+        }}
+
+        .allocation-grid {{
+            display:grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap:10px;
+            margin: 10px 0 2px 0;
+        }}
+        .allocation-item {{
+            border:1px solid {t['metric_border']};
+            background:{t['metric_bg']};
+            border-radius:8px;
+            padding:10px 12px;
+        }}
+        .allocation-title {{
+            color:{t['text_primary']};
+            font-weight:700;
+            font-size:0.9rem;
+            margin-bottom:6px;
+        }}
+        .allocation-line {{
+            color:{t['text_secondary']};
+            font-size:0.82rem;
+            line-height:1.45;
+        }}
+        @media (max-width: 900px) {{
+            .allocation-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+            .portfolio-summary {{ flex-direction: column; }}
         }}
 
         /* ── General text ── */
@@ -301,6 +351,23 @@ def render_regime_card(regime_name: str, note: str, risk_score: str, tone: str, 
     )
 
 
+def render_regime_allocation_guide(regime_code: int | None, dark: bool = True) -> None:
+    labels = {
+        1: "Regime 1 Very Risk On",
+        2: "Regime 2 Risk On",
+        3: "Regime 3 Risk Off",
+        4: "Regime 4 Very Risk Off",
+    }
+    if regime_code not in REGIME_ALLOCATION:
+        return
+
+    weights = REGIME_ALLOCATION[regime_code]
+    allocation = " / ".join(f"{ticker} {weight}%" for ticker, weight in weights if weight > 0)
+    with st.container(border=True):
+        st.markdown(f"**현재 비중 가이드: {labels.get(regime_code, f'Regime {regime_code}')}**")
+        st.caption(f"{allocation} 매수")
+
+
 def render_hero(date_label: str, regime: str) -> None:
     st.markdown(
         f"""
@@ -344,7 +411,13 @@ def render_snapshot_board(title: str, items: list[dict[str, str]], columns_per_r
                     delta_value = item["delta"].replace("chg ", "")
                     delta_float = None if delta_value == "N/A" else delta_value
                     with col:
-                        st.metric(item["label"], item["value"], delta=delta_float, border=True)
+                        st.metric(
+                            item["label"],
+                            item["value"],
+                            delta=delta_float,
+                            delta_color="normal",
+                            border=True,
+                        )
 
 
 def render_recent_signal_table(frame: pd.DataFrame, max_height: str = "480px") -> None:
@@ -577,7 +650,7 @@ def render_nav_chart(
             opacity=1.0 if is_portfolio else 0.75,
         ))
 
-    fig.add_hline(y=1000, line_dash="dot", line_color="rgba(128,128,128,0.35)", line_width=1)
+    fig.add_hline(y=100, line_dash="dot", line_color="rgba(128,128,128,0.35)", line_width=1)
 
     fig.update_layout(
         title=dict(
@@ -652,6 +725,8 @@ def render_portfolio_hero(today_stats: dict, dark: bool = True) -> None:
     )
 
     def _clr(v: float) -> str:
+        if np.isnan(v):
+            return sub
         return "#22c55e" if v >= 0 else "#ef4444"
 
     def _fmt(v: float, suffix: str = "%") -> str:
@@ -669,21 +744,22 @@ def render_portfolio_hero(today_stats: dict, dark: bool = True) -> None:
     ttext  = t["thead_text"]
 
     html = f"""
-    <div style="display:flex;gap:14px;align-items:stretch;margin-bottom:18px;">
-      <div style="flex:1;background:{bg};border:1px solid {border};border-radius:16px;padding:20px 24px;">
+    <div class="portfolio-summary" style="display:flex;gap:12px;align-items:stretch;margin-bottom:18px;">
+      <div style="flex:1;background:{bg};border:1px solid {border};border-radius:8px;padding:18px 20px;">
         <div style="font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:{sub};margin-bottom:8px;">NAV</div>
-        <div style="font-size:2.3rem;font-weight:800;color:{text};line-height:1.1;">
+        <div style="font-size:2rem;font-weight:800;color:{text};line-height:1.15;">
           {current_nav:,.2f}
           <span style="font-size:1rem;font-weight:600;color:{_clr(daily_change)};margin-left:10px;">
             {chg_sign}{daily_change:,.2f} ({_fmt(daily_pct)})
           </span>
         </div>
         <div style="font-size:0.88rem;color:{sub};margin-top:10px;">
-          기준 1,000 &nbsp;|&nbsp; 기간 수익률
+          기준 100 &nbsp;|&nbsp; 기간 수익률
           <span style="color:{_clr(period_pct)};font-weight:700;"> {_fmt(period_pct)}</span>
         </div>
       </div>
-      <div style="flex:1;background:{bg};border:1px solid {border};border-radius:16px;padding:20px 24px;">
+      <div style="flex:1;background:{bg};border:1px solid {border};border-radius:8px;padding:18px 20px;">
+        <div style="font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:{sub};margin-bottom:8px;">Portfolio vs AGG</div>
         <table style="width:100%;border-collapse:collapse;font-size:0.93rem;">
           <thead>
             <tr style="background:{thead};">
@@ -781,23 +857,28 @@ def render_metrics_comparison(
         ("최대 낙폭 MDD", "max_drawdown",  _pct),
     ]
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("#### Portfolio")
-        for label, key, fmt in rows:
-            pv = port_m.get(key, float("nan"))
-            bv = bm_m.get(key, float("nan"))
-            delta_str = None
-            if key in ("total_return", "ann_return"):
-                if isinstance(pv, float) and isinstance(bv, float) and not np.isnan(pv) and not np.isnan(bv):
-                    delta_str = f"{(pv - bv) * 100:+.2f}% vs AGG"
-            elif key in ("sharpe", "sortino"):
-                if isinstance(pv, float) and isinstance(bv, float) and not np.isnan(pv) and not np.isnan(bv):
-                    delta_str = f"{pv - bv:+.3f} vs AGG"
-            st.metric(label, fmt(pv), delta=delta_str)
+    table_rows = []
+    for label, key, fmt in rows:
+        pv = port_m.get(key, float("nan"))
+        bv = bm_m.get(key, float("nan"))
+        diff = float("nan")
+        if isinstance(pv, float) and isinstance(bv, float) and not np.isnan(pv) and not np.isnan(bv):
+            diff = pv - bv
+        diff_fmt = _pct(diff) if key in ("total_return", "ann_return", "ann_vol", "max_drawdown") else _ratio(diff)
+        if not np.isnan(diff):
+            diff_fmt = f"+{diff_fmt}" if diff > 0 else diff_fmt
+        table_rows.append(
+            {
+                "지표": label,
+                "Portfolio": fmt(pv),
+                "AGG": fmt(bv),
+                "차이": diff_fmt,
+            }
+        )
 
-    with c2:
-        st.markdown("#### AGG Benchmark")
-        for label, key, fmt in rows:
-            bv = bm_m.get(key, float("nan"))
-            st.metric(label, fmt(bv))
+    st.dataframe(
+        pd.DataFrame(table_rows),
+        hide_index=True,
+        use_container_width=True,
+        height=250,
+    )
