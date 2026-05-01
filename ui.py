@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
@@ -542,3 +543,127 @@ def regime_history_chart(frame: pd.DataFrame, dark: bool = True) -> None:
     fig.update_xaxes(showgrid=False, color=t["plot_axis"])
     fig.update_yaxes(gridcolor=t["plot_grid"], color=t["plot_axis"])
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+
+# ── Portfolio Performance ──────────────────────────────────────────────────────
+
+def render_nav_chart(nav_df: pd.DataFrame, dark: bool = True) -> None:
+    t = _t(dark)
+    palette = {
+        "Portfolio": "#3b82f6",
+        "AGG": "#facc15" if dark else "#d97706",
+    }
+    extra = ["#22c55e", "#dc2626", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"]
+    extra_idx = 0
+
+    fig = go.Figure()
+    for col in nav_df.columns:
+        color = palette.get(col)
+        if color is None:
+            color = extra[extra_idx % len(extra)]
+            extra_idx += 1
+        is_portfolio = col == "Portfolio"
+        fig.add_trace(go.Scatter(
+            x=nav_df.index,
+            y=nav_df[col],
+            mode="lines",
+            name=col,
+            line=dict(width=3 if is_portfolio else 1.8, color=color),
+            opacity=1.0 if is_portfolio else 0.75,
+        ))
+
+    fig.add_hline(y=100, line_dash="dot", line_color="rgba(128,128,128,0.35)", line_width=1)
+
+    fig.update_layout(
+        title=dict(
+            text="NAV (투자 시점 기준 = 100)",
+            x=0, y=0.97, xanchor="left",
+            font=dict(size=20, color=t["text_primary"]),
+        ),
+        height=420,
+        margin=dict(l=18, r=18, t=64, b=18),
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.02,
+            xanchor="left", x=0,
+            font=dict(size=11, color=t["text_secondary"]),
+        ),
+        paper_bgcolor=t["plot_paper"],
+        plot_bgcolor=t["plot_bg"],
+        hovermode="x unified",
+    )
+    fig.update_xaxes(showgrid=False, color=t["plot_axis"])
+    fig.update_yaxes(gridcolor=t["plot_grid"], color=t["plot_axis"])
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+
+def render_daily_return_chart(nav: pd.Series, label: str = "Portfolio", dark: bool = True) -> None:
+    t = _t(dark)
+    ret = nav.pct_change().dropna() * 100
+    colors = ["#22c55e" if v >= 0 else "#ef4444" for v in ret.values]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=ret.index,
+        y=ret.values,
+        name=label,
+        marker_color=colors,
+        marker_line_width=0,
+    ))
+    fig.add_hline(y=0, line_color="rgba(128,128,128,0.4)", line_width=1)
+
+    fig.update_layout(
+        title=dict(
+            text=f"Daily Return — {label} (%)",
+            x=0, y=0.97, xanchor="left",
+            font=dict(size=18, color=t["text_primary"]),
+        ),
+        height=280,
+        margin=dict(l=18, r=18, t=56, b=18),
+        showlegend=False,
+        paper_bgcolor=t["plot_paper"],
+        plot_bgcolor=t["plot_bg"],
+    )
+    fig.update_xaxes(showgrid=False, color=t["plot_axis"])
+    fig.update_yaxes(gridcolor=t["plot_grid"], color=t["plot_axis"], ticksuffix="%")
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+
+def render_metrics_comparison(
+    port_m: dict[str, float],
+    bm_m: dict[str, float],
+) -> None:
+    def _pct(v: float) -> str:
+        return f"{v * 100:.2f}%" if isinstance(v, float) and not np.isnan(v) else "N/A"
+
+    def _ratio(v: float) -> str:
+        return f"{v:.3f}" if isinstance(v, float) and not np.isnan(v) else "N/A"
+
+    rows = [
+        ("총 수익률",     "total_return",  _pct),
+        ("연환산 수익률", "ann_return",    _pct),
+        ("연환산 변동성", "ann_vol",       _pct),
+        ("샤프 비율",     "sharpe",        _ratio),
+        ("소르티노 비율", "sortino",       _ratio),
+        ("최대 낙폭 MDD", "max_drawdown",  _pct),
+    ]
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("#### Portfolio")
+        for label, key, fmt in rows:
+            pv = port_m.get(key, float("nan"))
+            bv = bm_m.get(key, float("nan"))
+            delta_str = None
+            if key in ("total_return", "ann_return"):
+                if isinstance(pv, float) and isinstance(bv, float) and not np.isnan(pv) and not np.isnan(bv):
+                    delta_str = f"{(pv - bv) * 100:+.2f}% vs AGG"
+            elif key in ("sharpe", "sortino"):
+                if isinstance(pv, float) and isinstance(bv, float) and not np.isnan(pv) and not np.isnan(bv):
+                    delta_str = f"{pv - bv:+.3f} vs AGG"
+            st.metric(label, fmt(pv), delta=delta_str)
+
+    with c2:
+        st.markdown("#### AGG Benchmark")
+        for label, key, fmt in rows:
+            bv = bm_m.get(key, float("nan"))
+            st.metric(label, fmt(bv))
