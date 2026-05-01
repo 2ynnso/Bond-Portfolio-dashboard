@@ -9,6 +9,8 @@ try:
 except Exception:
     yf = None
 
+_NAV_BASE = 1000
+
 
 @st.cache_data(ttl=1800, show_spinner=False)
 def fetch_price_history(ticker: str, start: str) -> pd.Series:
@@ -48,12 +50,55 @@ def fetch_price_history(ticker: str, start: str) -> pd.Series:
         return pd.Series(dtype=float, name=ticker)
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_intraday(ticker: str) -> pd.Series:
+    """Fetch today's 5-minute close prices, converted to US/Eastern time."""
+    if yf is None:
+        return pd.Series(dtype=float, name=ticker)
+    try:
+        raw = yf.download(
+            ticker,
+            period="1d",
+            interval="5m",
+            progress=False,
+            threads=False,
+            timeout=20,
+        )
+        if raw.empty:
+            return pd.Series(dtype=float, name=ticker)
+
+        if isinstance(raw.columns, pd.MultiIndex):
+            close_cols = [c for c in raw.columns if c[0] == "Close"]
+            s = raw[close_cols[0]] if close_cols else raw.iloc[:, 0]
+        else:
+            for col_name in ("Close", "Adj Close"):
+                if col_name in raw.columns:
+                    s = raw[col_name]
+                    break
+            else:
+                s = raw.iloc[:, 0]
+
+        if isinstance(s, pd.DataFrame):
+            s = s.squeeze()
+
+        s = pd.to_numeric(s, errors="coerce").dropna()
+        if hasattr(s.index, "tz") and s.index.tz is not None:
+            try:
+                s.index = s.index.tz_convert("America/New_York").tz_localize(None)
+            except Exception:
+                s.index = s.index.tz_localize(None)
+        s.name = ticker
+        return s
+    except Exception:
+        return pd.Series(dtype=float, name=ticker)
+
+
 def build_portfolio_nav(
     positions: list[dict],
     start_date: pd.Timestamp,
 ) -> tuple[pd.DataFrame, list[str]]:
     """
-    Compute portfolio NAV (base=100) and individual ticker NAVs.
+    Compute portfolio NAV (base=1000) and individual ticker NAVs.
     Returns (DataFrame columns=["Portfolio", ticker1, ...], warnings)
     """
     warns: list[str] = []
@@ -103,17 +148,17 @@ def build_portfolio_nav(
         return pd.DataFrame(), warns + ["포트폴리오를 구성하지 못했습니다."]
 
     nav_df = pd.DataFrame(index=all_dates)
-    nav_df["Portfolio"] = port_val / port_val.iloc[0] * 100
+    nav_df["Portfolio"] = port_val / port_val.iloc[0] * _NAV_BASE
 
     for tkr, prices in price_dict.items():
         p = prices.reindex(all_dates).ffill().bfill()
-        nav_df[tkr] = p / p.iloc[0] * 100
+        nav_df[tkr] = p / p.iloc[0] * _NAV_BASE
 
     return nav_df, warns
 
 
 def add_benchmark_nav(nav_df: pd.DataFrame, start_date: pd.Timestamp) -> pd.DataFrame:
-    """Fetch AGG and add as benchmark column if not already present."""
+    """Fetch AGG and add as benchmark column (base=1000) if not already present."""
     if "AGG" in nav_df.columns:
         return nav_df
     start_naive = start_date.tz_localize(None) if start_date.tzinfo else start_date
@@ -125,8 +170,82 @@ def add_benchmark_nav(nav_df: pd.DataFrame, start_date: pd.Timestamp) -> pd.Data
         return nav_df
     p = agg.reindex(nav_df.index).ffill().bfill()
     nav_df = nav_df.copy()
-    nav_df["AGG"] = p / p.iloc[0] * 100
+    nav_df["AGG"] = p / p.iloc[0] * _NAV_BASE
     return nav_df
+
+
+def build_intraday_portfolio_return(positions: list[dict]) -> pd.DataFrame:
+    """
+    Compute intraday return % from open for portfolio and AGG.
+    Returns DataFrame with columns ["Portfolio", "AGG"] (% from day open).
+    """
+    valid = [
+        pos for pos in positions
+        if str(pos.get("ticker", "")).strip() and float(pos.get("amount", 0) or 0) > 0
+    ]
+    if not valid:
+        return pd.DataFrame()
+
+    all_tickers = list(dict.fromkeys(
+        [str(p["ticker"]).strip().upper() for p in valid] + ["AGG"]
+    ))
+
+    intraday: dict[str, pd.Series] = {}
+    for tkr in all_tickers:
+        s = fetch_intraday(tkr)
+        if not s.empty:
+            intraday[tkr] = s
+
+    if not intraday:
+        return pd.DataFrame()
+
+    common_idx = None
+    for s in intraday.values():
+        common_idx = s.index if common_idx is None else common_idx.intersection(s.index)
+
+    if common_idx is None or len(common_idx) < 2:
+        return pd.DataFrame()
+
+    result = pd.DataFrame(index=common_idx)
+
+    port_ret = pd.Series(0.0, index=common_idx)
+    total_wt = 0.0
+    for pos in valid:
+        tkr = str(pos["ticker"]).strip().upper()
+        amt = float(pos.get("amount", 0) or 0)
+        if tkr not in intraday:
+            continue
+        s = intraday[tkr].reindex(common_idx).ffill()
+        port_ret += (s / s.iloc[0] - 1) * 100 * amt
+        total_wt += amt
+
+    if total_wt > 0:
+        result["Portfolio"] = port_ret / total_wt
+
+    if "AGG" in intraday:
+        s = intraday["AGG"].reindex(common_idx).ffill()
+        result["AGG"] = (s / s.iloc[0] - 1) * 100
+
+    return result
+
+
+def compute_today_stats(nav_df: pd.DataFrame) -> dict[str, dict[str, float]]:
+    """Current NAV, daily change, period return for each column."""
+    stats: dict[str, dict[str, float]] = {}
+    for col in nav_df.columns:
+        s = nav_df[col].dropna()
+        if len(s) < 2:
+            continue
+        current = float(s.iloc[-1])
+        prev = float(s.iloc[-2])
+        first = float(s.iloc[0])
+        stats[col] = {
+            "current": current,
+            "daily_change": current - prev,
+            "daily_pct": (current / prev - 1) * 100,
+            "period_pct": (current / first - 1) * 100,
+        }
+    return stats
 
 
 def compute_metrics(nav: pd.Series, rf_annual: float = 0.045) -> dict[str, float]:

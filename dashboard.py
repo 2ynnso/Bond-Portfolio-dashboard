@@ -5,7 +5,13 @@ import streamlit as st
 
 from config import DEFAULT_THRESHOLDS
 from data import build_dataset, get_fred_api_key
-from portfolio import add_benchmark_nav, build_portfolio_nav, compute_metrics
+from portfolio import (
+    add_benchmark_nav,
+    build_intraday_portfolio_return,
+    build_portfolio_nav,
+    compute_metrics,
+    compute_today_stats,
+)
 from signals import (
     classify_oas_z,
     classify_ppr,
@@ -26,8 +32,10 @@ from ui import (
     render_card,
     render_daily_return_chart,
     render_hero,
+    render_intraday_chart,
     render_metrics_comparison,
     render_nav_chart,
+    render_portfolio_hero,
     render_recent_signal_table,
     render_regime_card,
     render_section_divider,
@@ -285,6 +293,7 @@ with tab2:
         st.session_state.pf_metrics = None
         st.session_state.bm_metrics = None
         st.session_state.pf_warns = []
+        st.session_state.pf_positions = []
 
     # ── 계산 실행 ─────────────────────────────────────────────────────────────
     if calc_btn:
@@ -303,14 +312,14 @@ with tab2:
 
             st.session_state.pf_nav = nav_df if not nav_df.empty else None
             st.session_state.pf_warns = warns
+            st.session_state.pf_positions = positions
 
             if not nav_df.empty:
                 rf = rf_pct / 100
                 st.session_state.pf_metrics = compute_metrics(nav_df["Portfolio"], rf)
-                if "AGG" in nav_df.columns:
-                    st.session_state.bm_metrics = compute_metrics(nav_df["AGG"], rf)
-                else:
-                    st.session_state.bm_metrics = {}
+                st.session_state.bm_metrics = (
+                    compute_metrics(nav_df["AGG"], rf) if "AGG" in nav_df.columns else {}
+                )
 
     # ── 결과 표시 ─────────────────────────────────────────────────────────────
     for w in st.session_state.get("pf_warns", []):
@@ -320,21 +329,34 @@ with tab2:
     if nav_df is not None and not nav_df.empty:
         render_section_divider()
 
-        # NAV 차트
-        render_nav_chart(nav_df, dark=dark)
+        # ① Hero — 현재 NAV / 당일 등락 / 당일·기간·대비% 비교 테이블
+        today_stats = compute_today_stats(nav_df)
+        render_portfolio_hero(today_stats, dark=dark)
 
-        # Daily Return 바차트
+        # ② Intraday Return(%) | Daily NAV — 나란히
+        saved_positions = st.session_state.get("pf_positions", [])
+        intraday_df = build_intraday_portfolio_return(saved_positions)
+
+        c_intra, c_daily = st.columns(2)
+        with c_intra:
+            render_intraday_chart(intraday_df, dark=dark)
+        with c_daily:
+            _bm_cols = [c for c in ["Portfolio", "AGG"] if c in nav_df.columns]
+            render_nav_chart(nav_df[_bm_cols], dark=dark, title="Daily NAV", height=320)
+
+        # ③ Daily Return 바차트
         render_daily_return_chart(nav_df["Portfolio"], label="Portfolio", dark=dark)
 
         render_section_divider()
 
-        # 성과지표 비교
+        # ④ 성과지표 비교
         st.markdown("### 성과지표 비교 — Portfolio vs AGG Benchmark")
-        port_m = st.session_state.pf_metrics or {}
-        bm_m = st.session_state.bm_metrics or {}
-        render_metrics_comparison(port_m, bm_m)
+        render_metrics_comparison(
+            st.session_state.pf_metrics or {},
+            st.session_state.bm_metrics or {},
+        )
 
-        # 개별 NAV 상세 테이블
+        # ⑤ NAV 데이터 테이블
         with st.expander("NAV 데이터 테이블 보기"):
             display_nav = nav_df.copy()
             display_nav.index = display_nav.index.strftime("%Y-%m-%d")

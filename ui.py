@@ -547,7 +547,12 @@ def regime_history_chart(frame: pd.DataFrame, dark: bool = True) -> None:
 
 # ── Portfolio Performance ──────────────────────────────────────────────────────
 
-def render_nav_chart(nav_df: pd.DataFrame, dark: bool = True) -> None:
+def render_nav_chart(
+    nav_df: pd.DataFrame,
+    dark: bool = True,
+    title: str = "Daily NAV",
+    height: int = 320,
+) -> None:
     t = _t(dark)
     palette = {
         "Portfolio": "#3b82f6",
@@ -572,16 +577,16 @@ def render_nav_chart(nav_df: pd.DataFrame, dark: bool = True) -> None:
             opacity=1.0 if is_portfolio else 0.75,
         ))
 
-    fig.add_hline(y=100, line_dash="dot", line_color="rgba(128,128,128,0.35)", line_width=1)
+    fig.add_hline(y=1000, line_dash="dot", line_color="rgba(128,128,128,0.35)", line_width=1)
 
     fig.update_layout(
         title=dict(
-            text="NAV (투자 시점 기준 = 100)",
+            text=title,
             x=0, y=0.97, xanchor="left",
-            font=dict(size=20, color=t["text_primary"]),
+            font=dict(size=18, color=t["text_primary"]),
         ),
-        height=420,
-        margin=dict(l=18, r=18, t=64, b=18),
+        height=height,
+        margin=dict(l=18, r=18, t=56, b=18),
         legend=dict(
             orientation="h", yanchor="bottom", y=1.02,
             xanchor="left", x=0,
@@ -622,6 +627,135 @@ def render_daily_return_chart(nav: pd.Series, label: str = "Portfolio", dark: bo
         showlegend=False,
         paper_bgcolor=t["plot_paper"],
         plot_bgcolor=t["plot_bg"],
+    )
+    fig.update_xaxes(showgrid=False, color=t["plot_axis"])
+    fig.update_yaxes(gridcolor=t["plot_grid"], color=t["plot_axis"], ticksuffix="%")
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+
+def render_portfolio_hero(today_stats: dict, dark: bool = True) -> None:
+    t = _t(dark)
+    port = today_stats.get("Portfolio", {})
+    agg  = today_stats.get("AGG", {})
+
+    current_nav  = port.get("current",      0.0)
+    daily_change = port.get("daily_change", 0.0)
+    daily_pct    = port.get("daily_pct",    float("nan"))
+    period_pct   = port.get("period_pct",   float("nan"))
+    agg_daily    = agg.get("daily_pct",     float("nan"))
+    agg_period   = agg.get("period_pct",    float("nan"))
+
+    alpha = (
+        period_pct - agg_period
+        if not (np.isnan(period_pct) or np.isnan(agg_period))
+        else float("nan")
+    )
+
+    def _clr(v: float) -> str:
+        return "#22c55e" if v >= 0 else "#ef4444"
+
+    def _fmt(v: float, suffix: str = "%") -> str:
+        if np.isnan(v):
+            return "N/A"
+        sign = "+" if v >= 0 else ""
+        return f"{sign}{v:.2f}{suffix}"
+
+    chg_sign = "+" if daily_change >= 0 else ""
+    bg     = t["metric_bg"]
+    border = t["metric_border"]
+    text   = t["text_primary"]
+    sub    = t["text_secondary"]
+    thead  = t["thead_bg"]
+    ttext  = t["thead_text"]
+
+    html = f"""
+    <div style="display:flex;gap:14px;align-items:stretch;margin-bottom:18px;">
+      <div style="flex:1;background:{bg};border:1px solid {border};border-radius:16px;padding:20px 24px;">
+        <div style="font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:{sub};margin-bottom:8px;">NAV</div>
+        <div style="font-size:2.3rem;font-weight:800;color:{text};line-height:1.1;">
+          {current_nav:,.2f}
+          <span style="font-size:1rem;font-weight:600;color:{_clr(daily_change)};margin-left:10px;">
+            {chg_sign}{daily_change:,.2f} ({_fmt(daily_pct)})
+          </span>
+        </div>
+        <div style="font-size:0.88rem;color:{sub};margin-top:10px;">
+          기준 1,000 &nbsp;|&nbsp; 기간 수익률
+          <span style="color:{_clr(period_pct)};font-weight:700;"> {_fmt(period_pct)}</span>
+        </div>
+      </div>
+      <div style="flex:1;background:{bg};border:1px solid {border};border-radius:16px;padding:20px 24px;">
+        <table style="width:100%;border-collapse:collapse;font-size:0.93rem;">
+          <thead>
+            <tr style="background:{thead};">
+              <th style="text-align:left;padding:7px 12px;color:{ttext};font-weight:700;border-radius:6px 0 0 0;"></th>
+              <th style="text-align:right;padding:7px 12px;color:{ttext};font-weight:700;">당일%</th>
+              <th style="text-align:right;padding:7px 12px;color:{ttext};font-weight:700;">기간%</th>
+              <th style="text-align:right;padding:7px 12px;color:{ttext};font-weight:700;border-radius:0 6px 0 0;">대비%</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td style="padding:10px 12px;color:{text};font-weight:700;">Portfolio</td>
+              <td style="text-align:right;padding:10px 12px;color:{_clr(daily_pct)};font-weight:600;">{_fmt(daily_pct)}</td>
+              <td style="text-align:right;padding:10px 12px;color:{_clr(period_pct)};font-weight:600;">{_fmt(period_pct)}</td>
+              <td style="text-align:right;padding:10px 12px;color:{_clr(alpha)};font-weight:700;">{_fmt(alpha)}</td>
+            </tr>
+            <tr>
+              <td style="padding:10px 12px;color:{text};font-weight:700;">AGG</td>
+              <td style="text-align:right;padding:10px 12px;color:{_clr(agg_daily)};font-weight:600;">{_fmt(agg_daily)}</td>
+              <td style="text-align:right;padding:10px 12px;color:{_clr(agg_period)};font-weight:600;">{_fmt(agg_period)}</td>
+              <td style="text-align:right;padding:10px 12px;color:{sub};">—</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    """
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def render_intraday_chart(intraday_df: pd.DataFrame, dark: bool = True) -> None:
+    t = _t(dark)
+    if intraday_df.empty:
+        st.info("장중 데이터 없음 (미국 ETF 거래시간 외 또는 장 마감 후)")
+        return
+
+    palette = {"Portfolio": "#3b82f6", "AGG": "#facc15" if dark else "#d97706"}
+    extra = ["#22c55e", "#dc2626", "#8b5cf6"]
+    extra_idx = 0
+
+    fig = go.Figure()
+    for col in intraday_df.columns:
+        color = palette.get(col)
+        if color is None:
+            color = extra[extra_idx % len(extra)]
+            extra_idx += 1
+        fig.add_trace(go.Scatter(
+            x=intraday_df.index,
+            y=intraday_df[col],
+            mode="lines",
+            name=col,
+            line=dict(width=2.5 if col == "Portfolio" else 1.8, color=color),
+        ))
+
+    fig.add_hline(y=0, line_dash="dash", line_color="rgba(128,128,128,0.4)", line_width=1)
+
+    fig.update_layout(
+        title=dict(
+            text="Intraday Return (%)",
+            x=0, y=0.97, xanchor="left",
+            font=dict(size=18, color=t["text_primary"]),
+        ),
+        height=320,
+        margin=dict(l=18, r=18, t=56, b=18),
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.02,
+            xanchor="left", x=0,
+            font=dict(size=11, color=t["text_secondary"]),
+        ),
+        paper_bgcolor=t["plot_paper"],
+        plot_bgcolor=t["plot_bg"],
+        hovermode="x unified",
     )
     fig.update_xaxes(showgrid=False, color=t["plot_axis"])
     fig.update_yaxes(gridcolor=t["plot_grid"], color=t["plot_axis"], ticksuffix="%")
