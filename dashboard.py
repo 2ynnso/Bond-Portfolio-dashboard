@@ -36,6 +36,7 @@ from ui import (
     inject_css,
     line_chart,
     regime_history_chart,
+    render_allocation_pie,
     render_card,
     render_daily_return_chart,
     render_hero,
@@ -352,11 +353,17 @@ with tab2:
 
                 render_section_divider()
 
-                # ① Hero — 현재 NAV / 당일 등락 / 기간 수익률
+                # ① 포트폴리오 비중 파이 차트
+                _start_ts = pd.Timestamp(trades["date"].min())
+                position_summary, _ = build_position_summary(_positions, _start_ts)
+                if not position_summary.empty:
+                    render_allocation_pie(position_summary, dark=dark)
+
+                # ② Hero — 현재 NAV / 당일 등락 / 기간 수익률
                 today_stats = compute_today_stats(nav_df)
                 render_portfolio_hero(today_stats, dark=dark)
 
-                # ② Intraday Return | Daily NAV (TWR + AGG)
+                # ③ Intraday Return | Daily NAV (TWR + AGG)
                 intraday_df = build_intraday_portfolio_return(_positions)
                 c_intra, c_daily = st.columns(2)
                 with c_intra:
@@ -371,8 +378,6 @@ with tab2:
                 render_section_divider()
 
                 # ④ 포지션별 손익
-                _start_ts = pd.Timestamp(trades["date"].min())
-                position_summary, _ = build_position_summary(_positions, _start_ts)
                 if not position_summary.empty:
                     st.markdown("### 포지션별 손익")
                     st.dataframe(

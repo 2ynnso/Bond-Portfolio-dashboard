@@ -882,3 +882,51 @@ def render_metrics_comparison(
         width="stretch",
         height=250,
     )
+
+
+def render_allocation_pie(position_summary: pd.DataFrame, dark: bool = True) -> None:
+    t = _t(dark)
+    df = position_summary[["티커", "평가금액 USD"]].copy()
+    df = df[df["평가금액 USD"] > 0].dropna()
+    if df.empty:
+        return
+
+    total = df["평가금액 USD"].sum()
+    df["비중"] = df["평가금액 USD"] / total * 100
+
+    colors = ["#3b82f6", "#22c55e", "#f59e0b", "#ec4899", "#8b5cf6", "#14b8a6", "#f97316", "#dc2626"]
+
+    fig = go.Figure(go.Pie(
+        labels=df["티커"],
+        values=df["평가금액 USD"],
+        customdata=df["비중"],
+        texttemplate="%{label}<br>%{customdata:.1f}%",
+        textposition="inside",
+        hovertemplate="%{label}<br>평가금액: $%{value:,.0f}<br>비중: %{customdata:.1f}%<extra></extra>",
+        marker=dict(colors=colors[:len(df)], line=dict(color=t["plot_paper"], width=2)),
+        hole=0.45,
+    ))
+
+    fig.update_layout(
+        title=dict(text="포트폴리오 비중", font=dict(color=t["text_primary"], size=15), x=0.5),
+        paper_bgcolor=t["plot_paper"],
+        plot_bgcolor=t["plot_bg"],
+        font=dict(color=t["text_primary"]),
+        showlegend=True,
+        legend=dict(
+            orientation="v",
+            x=1.02,
+            y=0.5,
+            font=dict(color=t["text_secondary"], size=12),
+        ),
+        margin=dict(l=10, r=120, t=50, b=10),
+        height=320,
+        annotations=[dict(
+            text=f"${total:,.0f}",
+            x=0.5, y=0.5,
+            font=dict(size=14, color=t["text_primary"]),
+            showarrow=False,
+        )],
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
