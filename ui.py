@@ -662,7 +662,7 @@ def render_nav_chart(
         margin=dict(l=18, r=18, t=56, b=18),
         legend=dict(
             orientation="h", yanchor="bottom", y=1.02,
-            xanchor="left", x=0,
+            xanchor="right", x=1,
             font=dict(size=11, color=t["text_secondary"]),
         ),
         paper_bgcolor=t["plot_paper"],
@@ -826,7 +826,7 @@ def render_intraday_chart(intraday_df: pd.DataFrame, dark: bool = True) -> None:
         margin=dict(l=18, r=18, t=56, b=18),
         legend=dict(
             orientation="h", yanchor="bottom", y=1.02,
-            xanchor="left", x=0,
+            xanchor="right", x=1,
             font=dict(size=11, color=t["text_secondary"]),
         ),
         paper_bgcolor=t["plot_paper"],
