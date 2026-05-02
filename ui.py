@@ -884,6 +884,71 @@ def render_metrics_comparison(
     )
 
 
+def render_hy_oas_vix_chart(frame: pd.DataFrame, dark: bool = True) -> None:
+    t = _t(dark)
+    oas = pd.to_numeric(frame.get("HY_OAS"), errors="coerce").dropna() if "HY_OAS" in frame.columns else pd.Series(dtype=float)
+    vix = pd.to_numeric(frame.get("VIX"),    errors="coerce").dropna() if "VIX"    in frame.columns else pd.Series(dtype=float)
+
+    if oas.empty and vix.empty:
+        st.info("HY OAS / VIX 데이터가 없습니다.")
+        return
+
+    fig = go.Figure()
+
+    if not oas.empty:
+        fig.add_trace(go.Scatter(
+            x=oas.index, y=oas.values,
+            name="HY OAS (%)",
+            mode="lines",
+            line=dict(color="#3b82f6", width=2.5),
+            yaxis="y1",
+        ))
+
+    if not vix.empty:
+        fig.add_trace(go.Scatter(
+            x=vix.index, y=vix.values,
+            name="VIX",
+            mode="lines",
+            line=dict(color="#22c55e", width=2.5),
+            yaxis="y2",
+        ))
+
+    fig.update_layout(
+        title=dict(
+            text="HY OAS vs VIX",
+            x=0, y=0.96, xanchor="left", yanchor="top",
+            font=dict(size=20, color=t["text_primary"]),
+        ),
+        height=340,
+        margin=dict(l=18, r=60, t=80, b=18),
+        paper_bgcolor=t["plot_paper"],
+        plot_bgcolor=t["plot_bg"],
+        legend=dict(
+            orientation="h", yanchor="bottom", y=1.08,
+            xanchor="left", x=0,
+            font=dict(size=11, color=t["text_secondary"]),
+        ),
+        yaxis=dict(
+            title=dict(text="HY OAS (%)", font=dict(color="#3b82f6", size=12)),
+            tickfont=dict(color="#3b82f6"),
+            gridcolor=t["plot_grid"],
+            color=t["plot_axis"],
+            side="left",
+        ),
+        yaxis2=dict(
+            title=dict(text="VIX", font=dict(color="#22c55e", size=12)),
+            tickfont=dict(color="#22c55e"),
+            overlaying="y",
+            side="right",
+            showgrid=False,
+            color=t["plot_axis"],
+        ),
+        xaxis=dict(showgrid=False, color=t["plot_axis"]),
+    )
+
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+
 def render_allocation_pie(position_summary: pd.DataFrame, dark: bool = True) -> None:
     t = _t(dark)
     df = position_summary[["티커", "평가금액 USD"]].copy()

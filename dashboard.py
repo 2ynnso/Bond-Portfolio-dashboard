@@ -40,6 +40,7 @@ from ui import (
     render_card,
     render_daily_return_chart,
     render_hero,
+    render_hy_oas_vix_chart,
     render_intraday_chart,
     render_metrics_comparison,
     render_nav_chart,
@@ -174,6 +175,8 @@ with tab1:
         render_card("AGG ETF", format_value(agg_value, "$"), format_signed(agg_delta, "$"), agg_note, "agg", dark=dark)
 
     st.caption(ppr_note)
+
+    render_hy_oas_vix_chart(macro, dark=dark)
 
     st.markdown("### Treasury Snapshot")
     render_snapshot_board(
