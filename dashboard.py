@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from config import DEFAULT_THRESHOLDS
@@ -25,6 +26,13 @@ from signals import (
     format_value,
     latest_delta,
     latest_value,
+)
+from utils.trade_ledger import (
+    append_trade,
+    compute_performance_decomposition,
+    compute_twr_nav,
+    is_gsheets_configured,
+    load_trades,
 )
 from ui import (
     inject_css,
@@ -406,3 +414,157 @@ with tab2:
                 use_container_width=True,
                 height=400,
             )
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB 2 — Trade Ledger (Google Sheets 연동 TWR NAV)
+# ═══════════════════════════════════════════════════════════════════════════════
+with tab2:
+    render_section_divider()
+    st.markdown("### 📒 Trade Ledger — TWR NAV (Google Sheets 연동)")
+
+    if not is_gsheets_configured():
+        st.info(
+            "Google Sheets 연동이 설정되지 않았습니다. "
+            "`streamlit-secrets.example.toml`을 참고해 `secrets.toml`에 "
+            "`[gcp_service_account]`와 `[gsheets]` 섹션을 추가하세요.",
+            icon="ℹ️",
+        )
+    else:
+        # ── 거래 입력 폼 ──────────────────────────────────────────────────────
+        with st.expander("➕ 거래 입력", expanded=False):
+            with st.form("trade_input_form", clear_on_submit=True):
+                fc1, fc2, fc3 = st.columns(3)
+                with fc1:
+                    t_date = st.date_input(
+                        "거래일",
+                        value=pd.Timestamp.today().date(),
+                        max_value=pd.Timestamp.today().date(),
+                    )
+                    t_ticker = st.text_input("티커 (예: SHYG)", placeholder="SHYG").strip().upper()
+                with fc2:
+                    t_action = st.selectbox("거래 유형", ["BUY", "SELL"])
+                    t_qty = st.number_input("수량 (주)", min_value=0.0, step=1.0, format="%.4f")
+                with fc3:
+                    t_price = st.number_input("매수가 USD", min_value=0.0, step=0.01, format="%.4f")
+                    t_fx = st.number_input(
+                        "USD/KRW 환율",
+                        min_value=0.0,
+                        step=1.0,
+                        value=1350.0,
+                        format="%.2f",
+                    )
+
+                submitted = st.form_submit_button("저장", type="primary")
+                if submitted:
+                    if not t_ticker:
+                        st.warning("티커를 입력하세요.")
+                    elif t_qty <= 0:
+                        st.warning("수량을 입력하세요.")
+                    elif t_price <= 0:
+                        st.warning("매수가를 입력하세요.")
+                    else:
+                        ok = append_trade(
+                            str(t_date), t_ticker, t_action,
+                            t_qty, t_price, t_fx,
+                        )
+                        if ok:
+                            st.success(f"{t_date} {t_action} {t_ticker} {t_qty}주 저장 완료.")
+                            st.rerun()
+
+        # ── 거래 내역 테이블 ──────────────────────────────────────────────────
+        with st.spinner("Google Sheets에서 거래 데이터 불러오는 중..."):
+            trades = load_trades()
+
+        if trades.empty:
+            st.info("저장된 거래 내역이 없습니다. 위 폼에서 거래를 입력하세요.")
+        else:
+            with st.expander("거래 내역 보기", expanded=False):
+                display_trades = trades.copy()
+                display_trades["date"] = display_trades["date"].dt.strftime("%Y-%m-%d")
+                st.dataframe(display_trades, use_container_width=True, height=300)
+
+            # ── TWR NAV 계산 ──────────────────────────────────────────────────
+            with st.spinner("TWR NAV 계산 중..."):
+                twr_nav, twr_warns = compute_twr_nav(trades)
+
+            for w in twr_warns:
+                st.warning(w)
+
+            if not twr_nav.empty:
+                # ─ Hero 지표 ──────────────────────────────────────────────────
+                twr = twr_nav["TWR_NAV"].dropna()
+                current_nav = float(twr.iloc[-1])
+                period_ret = (twr.iloc[-1] / twr.iloc[0] - 1) * 100
+                daily_ret = (twr.iloc[-1] / twr.iloc[-2] - 1) * 100 if len(twr) >= 2 else 0.0
+                max_dd = float(((twr - twr.cummax()) / twr.cummax()).min()) * 100
+
+                h1, h2, h3, h4 = st.columns(4)
+                h1.metric("TWR NAV", f"{current_nav:.2f}", f"{daily_ret:+.2f} (당일)")
+                h2.metric("기간 수익률", f"{period_ret:+.2f}%")
+                h3.metric("Max Drawdown", f"{max_dd:.2f}%")
+                if "IEF" in twr_nav.columns:
+                    ief_ret = (twr_nav["IEF"].iloc[-1] / twr_nav["IEF"].iloc[0] - 1) * 100
+                    h4.metric("IEF 벤치마크", f"{ief_ret:+.2f}%", f"vs 포트폴리오 {period_ret - ief_ret:+.2f}%p")
+
+                # ─ NAV 차트 ───────────────────────────────────────────────────
+                t_dark = dark
+                paper_c = "#111111" if t_dark else "#ffffff"
+                plot_c = "#000000" if t_dark else "#f8f9fa"
+                axis_c = "#888888" if t_dark else "#666666"
+                grid_c = "rgba(255,255,255,0.08)" if t_dark else "rgba(0,0,0,0.06)"
+
+                fig = go.Figure()
+
+                # Portfolio TWR NAV
+                fig.add_trace(go.Scatter(
+                    x=twr_nav.index, y=twr_nav["TWR_NAV"],
+                    mode="lines", name="Portfolio TWR NAV",
+                    line=dict(color="#3b82f6", width=2),
+                ))
+
+                # IEF benchmark
+                if "IEF" in twr_nav.columns:
+                    fig.add_trace(go.Scatter(
+                        x=twr_nav.index, y=twr_nav["IEF"],
+                        mode="lines", name="IEF Benchmark",
+                        line=dict(color="#f59e0b", width=1.5, dash="dot"),
+                    ))
+
+                # Rebalancing date markers
+                for td in trades["date"].dt.normalize().unique():
+                    if td in twr_nav.index:
+                        fig.add_vline(
+                            x=td, line_width=1,
+                            line_dash="dash", line_color="rgba(34,197,94,0.5)",
+                            annotation_text="R",
+                            annotation_font_size=9,
+                            annotation_font_color="#22c55e",
+                        )
+
+                fig.update_layout(
+                    title="TWR NAV (기준 100) — 수직선: 리밸런싱 발생일",
+                    paper_bgcolor=paper_c,
+                    plot_bgcolor=plot_c,
+                    font=dict(color=axis_c),
+                    xaxis=dict(showgrid=True, gridcolor=grid_c, linecolor=axis_c),
+                    yaxis=dict(showgrid=True, gridcolor=grid_c, linecolor=axis_c),
+                    legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=axis_c)),
+                    height=400,
+                    margin=dict(l=0, r=0, t=40, b=0),
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+                # ─ 성과 분해 테이블 ───────────────────────────────────────────
+                decomp = compute_performance_decomposition(trades, twr_nav)
+                if not decomp.empty:
+                    st.markdown("#### 성과 분해 — 가격 수익률 / 환율 효과")
+                    st.dataframe(
+                        decomp.style.format({
+                            "수량": "{:,.4f}",
+                            "가격 수익률(USD)": "{:.2%}",
+                            "환율 효과(KRW/USD)": "{:.2%}",
+                            "교호작용": "{:.2%}",
+                            "총 수익률(KRW)": "{:.2%}",
+                        }),
+                        use_container_width=True,
+                    )
