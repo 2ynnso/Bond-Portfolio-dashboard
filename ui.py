@@ -913,14 +913,21 @@ def render_hy_oas_vix_chart(frame: pd.DataFrame, dark: bool = True) -> None:
             yaxis="y2",
         ))
 
+    btn_style = dict(
+        bgcolor=t["plot_paper"],
+        bordercolor=t["plot_axis"],
+        font=dict(color=t["text_secondary"], size=11),
+        activecolor="#3b82f6",
+    )
+
     fig.update_layout(
         title=dict(
             text="HY OAS vs VIX",
-            x=0, y=0.96, xanchor="left", yanchor="top",
+            x=0, y=0.97, xanchor="left", yanchor="top",
             font=dict(size=20, color=t["text_primary"]),
         ),
-        height=340,
-        margin=dict(l=18, r=60, t=80, b=18),
+        height=400,
+        margin=dict(l=18, r=60, t=80, b=60),
         paper_bgcolor=t["plot_paper"],
         plot_bgcolor=t["plot_bg"],
         legend=dict(
@@ -943,7 +950,29 @@ def render_hy_oas_vix_chart(frame: pd.DataFrame, dark: bool = True) -> None:
             showgrid=False,
             color=t["plot_axis"],
         ),
-        xaxis=dict(showgrid=False, color=t["plot_axis"]),
+        xaxis=dict(
+            showgrid=False,
+            color=t["plot_axis"],
+            rangeselector=dict(
+                buttons=[
+                    dict(count=1,  label="1M",  step="month", stepmode="backward"),
+                    dict(count=3,  label="3M",  step="month", stepmode="backward"),
+                    dict(count=6,  label="6M",  step="month", stepmode="backward"),
+                    dict(count=1,  label="1Y",  step="year",  stepmode="backward"),
+                    dict(count=2,  label="2Y",  step="year",  stepmode="backward"),
+                    dict(step="all", label="ALL"),
+                ],
+                **btn_style,
+            ),
+            rangeslider=dict(
+                visible=True,
+                thickness=0.07,
+                bgcolor=t["plot_paper"],
+                bordercolor=t["plot_axis"],
+                borderwidth=1,
+            ),
+            type="date",
+        ),
     )
 
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
