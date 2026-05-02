@@ -268,13 +268,13 @@ def compute_twr_nav(trades_df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         "KRW_Value": pd.Series(value_series),
     }).sort_index()
 
-    # ── IEF benchmark overlay ─────────────────────────────────────────────────
-    ief = _fetch_history("IEF", start_str)
-    if not ief.empty:
-        ief_aligned = ief.reindex(nav_df.index).ffill().bfill()
-        nav_df["IEF"] = ief_aligned / ief_aligned.iloc[0] * _NAV_BASE
+    # ── AGG benchmark overlay ─────────────────────────────────────────────────
+    agg = _fetch_history("AGG", start_str)
+    if not agg.empty:
+        agg_aligned = agg.reindex(nav_df.index).ffill().bfill()
+        nav_df["AGG"] = agg_aligned / agg_aligned.iloc[0] * _NAV_BASE
     else:
-        warns.append("IEF 벤치마크 데이터를 가져오지 못했습니다.")
+        warns.append("AGG 벤치마크 데이터를 가져오지 못했습니다.")
 
     return nav_df, warns
 
@@ -338,7 +338,6 @@ def compute_performance_decomposition(
             "수량": qty,
             "가격 수익률(USD)": price_ret_usd,
             "환율 효과(KRW/USD)": fx_ret,
-            "교호작용": interaction,
             "총 수익률(KRW)": total_ret_krw,
         })
 
