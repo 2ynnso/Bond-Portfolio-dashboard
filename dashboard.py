@@ -534,12 +534,10 @@ with tab2:
                 for td in trades["date"].dt.normalize().unique():
                     if td in twr_nav.index:
                         fig.add_vline(
-                            x=td, line_width=1,
-                            line_dash="dash", line_color="rgba(34,197,94,0.5)",
-                            annotation=dict(
-                                text="R",
-                                font=dict(size=9, color="#22c55e"),
-                            ),
+                            x=td.strftime("%Y-%m-%d"),
+                            line_width=1,
+                            line_dash="dash",
+                            line_color="rgba(34,197,94,0.5)",
                         )
 
                 fig.update_layout(
