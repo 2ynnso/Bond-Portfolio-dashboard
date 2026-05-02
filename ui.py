@@ -487,7 +487,7 @@ def line_chart(
     )
     fig.update_xaxes(showgrid=False, color=t["plot_axis"])
     fig.update_yaxes(gridcolor=t["plot_grid"], color=t["plot_axis"])
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 
 def signal_focus_chart(
@@ -541,7 +541,7 @@ def signal_focus_chart(
     )
     fig.update_xaxes(showgrid=False, color=t["plot_axis"])
     fig.update_yaxes(gridcolor=t["plot_grid"], color=t["plot_axis"])
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 
 def regime_history_chart(frame: pd.DataFrame, dark: bool = True) -> None:
@@ -615,7 +615,7 @@ def regime_history_chart(frame: pd.DataFrame, dark: bool = True) -> None:
     )
     fig.update_xaxes(showgrid=False, color=t["plot_axis"])
     fig.update_yaxes(gridcolor=t["plot_grid"], color=t["plot_axis"])
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 
 # ── Portfolio Performance ──────────────────────────────────────────────────────
@@ -671,7 +671,7 @@ def render_nav_chart(
     )
     fig.update_xaxes(showgrid=False, color=t["plot_axis"])
     fig.update_yaxes(gridcolor=t["plot_grid"], color=t["plot_axis"])
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 
 def render_daily_return_chart(nav: pd.Series, label: str = "Portfolio", dark: bool = True) -> None:
@@ -703,7 +703,7 @@ def render_daily_return_chart(nav: pd.Series, label: str = "Portfolio", dark: bo
     )
     fig.update_xaxes(showgrid=False, color=t["plot_axis"])
     fig.update_yaxes(gridcolor=t["plot_grid"], color=t["plot_axis"], ticksuffix="%")
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 
 def render_portfolio_hero(today_stats: dict, dark: bool = True) -> None:
@@ -835,7 +835,7 @@ def render_intraday_chart(intraday_df: pd.DataFrame, dark: bool = True) -> None:
     )
     fig.update_xaxes(showgrid=False, color=t["plot_axis"])
     fig.update_yaxes(gridcolor=t["plot_grid"], color=t["plot_axis"], ticksuffix="%")
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 
 def render_metrics_comparison(
@@ -879,6 +879,6 @@ def render_metrics_comparison(
     st.dataframe(
         pd.DataFrame(table_rows),
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
         height=250,
     )

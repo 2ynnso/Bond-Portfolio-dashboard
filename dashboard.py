@@ -301,7 +301,7 @@ with tab2:
                 "투자금액", min_value=0.0, format="%.0f", width="small"
             ),
         },
-        use_container_width=True,
+        width="stretch",
     )
 
     calc_btn = st.button("📈 성과 계산", type="primary")
@@ -394,7 +394,7 @@ with tab2:
                         "원화 수익률": "{:.2%}",
                     }
                 ),
-                use_container_width=True,
+                width="stretch",
                 height=245,
             )
 
@@ -411,7 +411,7 @@ with tab2:
             display_nav.index = display_nav.index.strftime("%Y-%m-%d")
             st.dataframe(
                 display_nav.style.format("{:.2f}"),
-                use_container_width=True,
+                width="stretch",
                 height=400,
             )
 
@@ -481,7 +481,7 @@ with tab2:
             with st.expander("거래 내역 보기", expanded=False):
                 display_trades = trades.copy()
                 display_trades["date"] = display_trades["date"].dt.strftime("%Y-%m-%d")
-                st.dataframe(display_trades, use_container_width=True, height=300)
+                st.dataframe(display_trades, width="stretch", height=300)
 
             # ── TWR NAV 계산 ──────────────────────────────────────────────────
             with st.spinner("TWR NAV 계산 중..."):
@@ -553,7 +553,7 @@ with tab2:
                     height=400,
                     margin=dict(l=0, r=0, t=40, b=0),
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
 
                 # ─ 성과 분해 테이블 ───────────────────────────────────────────
                 decomp = compute_performance_decomposition(trades, twr_nav)
@@ -567,5 +567,5 @@ with tab2:
                             "교호작용": "{:.2%}",
                             "총 수익률(KRW)": "{:.2%}",
                         }),
-                        use_container_width=True,
+                        width="stretch",
                     )
