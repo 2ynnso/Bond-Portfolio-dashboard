@@ -536,9 +536,10 @@ with tab2:
                         fig.add_vline(
                             x=td, line_width=1,
                             line_dash="dash", line_color="rgba(34,197,94,0.5)",
-                            annotation_text="R",
-                            annotation_font_size=9,
-                            annotation_font_color="#22c55e",
+                            annotation=dict(
+                                text="R",
+                                font=dict(size=9, color="#22c55e"),
+                            ),
                         )
 
                 fig.update_layout(
