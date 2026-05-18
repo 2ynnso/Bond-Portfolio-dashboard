@@ -2,64 +2,55 @@
 
 FRED API와 시장 데이터 기반으로 채권/리스크 신호를 시각화하는 Streamlit 대시보드입니다.
 
-## Preview
-
-대시보드 스크린샷 두 장을 아래처럼 함께 확인할 수 있습니다.
-
-![Bond Signal Dashboard](./assets/bond-signal-dashboard.png)
-![Bond Signal Dashboard 2](./assets/bond-signal-dashboard-2.png)
-
-
-
 ## Features
 
-- **실시간 시장 데이터 모니터링**: FRED 시계열 기반 금리, VIX, 하이일드 스프레드 모니터링
-- **벤치마크 ETF 추적**: AGG ETF 가격 및 전일대비 변동률 실시간 확인
-- **PPR 계산**: SHYG 기반 Percentile Position Risk 계산 (12개월 롤링 백분위수)
-- **4단계 Regime 분류**: 점수 합산이 아니라 순차적 규칙 기반 분류
-- **다크 테마 UI**: 가시성 최적화된 현대적인 인터페이스
-- **카드형 요약 지표와 시계열 차트**: 직관적인 데이터 시각화
+### Signal Board 탭
 
-## Regime 분류 시스템 상세
+- **4단계 Regime 분류**: VIX → OAS_Z → PPR 순서의 순차적 룰 기반 분류
+- **HY OAS vs VIX 듀얼축 차트**: 하이일드 스프레드와 변동성 지수를 한 차트에서 비교, 1M/3M/6M/1Y/2Y/ALL 버튼 및 드래그 rangeslider로 시계열 자유 조정
+- **Treasury Snapshot**: 3M/2Y/3Y/5Y/7Y/10Y/10Y-2Y/HY Yield 최신 금리 및 5일 변화
+- **Signal Change Snapshot**: VIX/OAS Z/US 10Y/PPR 단기 변화 요약
+- **Signal Focus 차트**: VIX, OAS Z, PPR 개별 시계열 + 임계값 표시
+- **Regime History 차트**: 날짜별 Regime 변화 이력
+- **Curve and Credit 차트**: 미국채 커브 히스토리 및 하이일드 크레딧 히스토리
+- **AGG ETF 벤치마크**: 현재가 및 전일 대비 변동률
 
-이 대시보드는 신호별 점수를 더하는 구조가 아닙니다.  
-`VIX -> OAS_Z -> PPR` 순서로 조건을 검사하는 **순차적 룰 기반 분류**입니다.
+### Portfolio 탭 (Google Sheets 연동)
 
-### Rule Flow
+- **포트폴리오 비중 파이 차트**: 현재 평가금액 기준 종목별 비중
+- **Intraday 5분봉 차트**: 당일 실시간 포트폴리오 수익률 (yfinance)
+- **TWR NAV vs AGG 차트**: 시간가중수익률 기반 NAV와 AGG 벤치마크 비교
+- **Daily Return 바차트**: 일별 수익률 히스토리
+- **포지션별 손익**: 달러/원화 손익, 수익률, 환율 포함
+- **성과 지표 비교**: 총수익률, 연환산 수익률/변동성, 샤프/소르티노 비율, MDD
 
-1. **VIX > 30** 이면 바로 `Regime 4: Very Risk Off`
-2. 그렇지 않고 **OAS_Z >= 0** 이면 `Regime 3: Risk Off`
-3. 그렇지 않고 **PPR < 0.2** 이면 `Regime 1: Very Risk On`
-4. 그렇지 않고 **PPR > 0.8** 이면 `Regime 4: Very Risk Off`
-5. 위 조건에 모두 해당하지 않으면 `Regime 2: Risk On`
+## Data Sources
 
-### Interpretation Table
+| 소스 | 종류 | 갱신 주기 |
+|------|------|-----------|
+| FRED API | VIX, 미국채 금리, HY OAS/Yield | 30분 캐시 |
+| yfinance | AGG, SHYG, 포트폴리오 ETF 일간 가격 | 30분 캐시 |
+| yfinance | 포트폴리오 ETF 5분봉 (당일) | 5분 캐시 |
+| Google Sheets | 거래 내역 (Trade Ledger) | 실시간 |
+
+## Regime 분류 시스템
+
+점수 합산이 아닌 `VIX → OAS_Z → PPR` 순서의 **순차적 룰 기반 분류**입니다.
 
 | 조건 | 판정 | 의미 |
 |------|------|------|
-| `VIX > 30` | **Very Risk Off** | 변동성 급등 시 즉시 방어 |
-| `OAS_Z >= 0` | **Risk Off** | 신용 스프레드가 평균 이상으로 벌어져 방어 신호 |
-| `PPR < 0.2` | **Very Risk On** | 포지셔닝 부담이 낮아 공격적 매수 가능 |
-| `PPR > 0.8` | **Very Risk Off** | 포지셔닝 부담이 높아 강한 방어 필요 |
-| 나머지 구간 | **Risk On** | 위험자산 선호 유지 |
-
-### Example
-
-- `VIX=31` 이면 다른 지표를 보지 않고 바로 `Very Risk Off`
-- `VIX=24`, `OAS_Z=0.4` 이면 `Risk Off`
-- `VIX=18`, `OAS_Z=-0.6`, `PPR=0.12` 이면 `Very Risk On`
-- `VIX=19`, `OAS_Z=-0.3`, `PPR=0.55` 이면 `Risk On`
-- `VIX=17`, `OAS_Z=-0.4`, `PPR=0.91` 이면 `Very Risk Off`
+| `VIX > 30` | **Regime 4: Very Risk Off** | 변동성 급등 시 즉시 방어 |
+| `OAS_Z >= 0` | **Regime 3: Risk Off** | 신용 스프레드가 평균 이상, 방어 신호 |
+| `PPR < 0.2` | **Regime 1: Very Risk On** | 포지셔닝 부담 낮음, 공격적 매수 |
+| `PPR > 0.8` | **Regime 4: Very Risk Off** | 포지셔닝 부담 높음, 강한 방어 |
+| 나머지 | **Regime 2: Risk On** | 위험자산 선호 유지 |
 
 ## Stack
 
-- **Frontend**: Streamlit (다크 테마 UI)
-- **Backend**: Python 3.8+
+- **Frontend**: Streamlit
 - **Data Processing**: Pandas, NumPy
 - **Visualization**: Plotly
-- **Data Sources**: 
-  - FRED API (경제 지표)
-  - yfinance (ETF 가격 데이터)
+- **Data Sources**: FRED API, yfinance, Google Sheets API
 - **Environment**: python-dotenv, certifi
 
 ## Setup
@@ -82,34 +73,19 @@ FRED_API_KEY=your_api_key
 streamlit run dashboard.py
 ```
 
-앱은 접속 시 자동으로 데이터를 불러옵니다.
+## Streamlit Cloud 배포
 
-## Share As Web Page
-
-가장 빠른 방법은 Streamlit Community Cloud 배포입니다.
-
-1. 이 폴더를 GitHub 저장소로 푸시합니다.
-2. [Streamlit Community Cloud](https://share.streamlit.io/)에서 GitHub 저장소를 연결합니다.
-3. Main file path를 `dashboard.py`로 지정합니다.
-4. 앱 설정의 Secrets에 아래 값을 넣습니다.
+1. 이 저장소를 GitHub에 푸시합니다.
+2. [Streamlit Community Cloud](https://share.streamlit.io/)에서 저장소를 연결합니다.
+3. Main file path: `dashboard.py`
+4. Secrets에 아래 값을 추가합니다.
 
 ```toml
-FRED_API_KEY="your_api_key"
+FRED_API_KEY = "your_api_key"
 ```
-
-배포가 끝나면 공개 URL이 생성되고, 그 링크를 그대로 사람들에게 공유하면 됩니다.
-
-현재 저장소 기준 배포 연결값은 아래처럼 두면 됩니다.
 
 - Repository: `2ynnso/Bond-signal-dashboard`
 - Branch: `main`
 - Main file path: `dashboard.py`
 
-## Environment Notes
-
-- 로컬 실행: `.env`의 `FRED_API_KEY` 사용
-- Streamlit Cloud 배포: `secrets`의 `FRED_API_KEY` 사용
-
-## Repo Name
-
-- `bond-signal-dashboard`
+로컬 실행은 `.env`의 `FRED_API_KEY`, 배포 환경은 Streamlit Secrets의 `FRED_API_KEY`를 사용합니다.

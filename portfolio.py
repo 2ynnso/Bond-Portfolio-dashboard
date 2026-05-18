@@ -97,6 +97,7 @@ def fetch_intraday(ticker: str) -> pd.Series:
     try:
         raw = yf.download(
             ticker,
+            
             period="1d",
             interval="5m",
             auto_adjust=True,
