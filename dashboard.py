@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 
 from config import DEFAULT_THRESHOLDS
@@ -31,6 +30,7 @@ from utils.trade_ledger import (
     compute_twr_nav,
     is_gsheets_configured,
     load_trades,
+    trades_to_positions,
 )
 from ui import (
     inject_css,
@@ -50,6 +50,7 @@ from ui import (
     render_regime_card,
     render_section_divider,
     render_snapshot_board,
+    render_twr_nav_chart,
     signal_focus_chart,
 )
 
@@ -254,30 +255,6 @@ with tab1:
 # TAB 2 — Portfolio Performance (Google Sheets Trade Ledger 기반)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _ledger_to_positions(trades_df: pd.DataFrame) -> list[dict]:
-    """Trade ledger → portfolio.py 함수용 positions 리스트 변환."""
-    if trades_df.empty:
-        return []
-    df = trades_df.copy()
-    df["date"] = pd.to_datetime(df["date"])
-    df = df.sort_values("date")
-    positions = []
-    for ticker, group in df.groupby("ticker"):
-        buys = group[group["action"].str.upper() == "BUY"]
-        sells = group[group["action"].str.upper() == "SELL"]
-        net_qty = float(buys["quantity"].sum()) - float(sells["quantity"].sum())
-        if net_qty <= 0 or buys.empty:
-            continue
-        first = buys.iloc[0]
-        positions.append({
-            "ticker": str(ticker),
-            "buy_date": first["date"].date(),
-            "currency": "USD",
-            "amount": float(first["quantity"]) * float(first["price_usd"]),
-        })
-    return positions
-
-
 with tab2:
     st.markdown("### Portfolio Performance")
 
@@ -352,7 +329,7 @@ with tab2:
                 if "AGG" in twr_nav.columns:
                     nav_df["AGG"] = twr_nav["AGG"]
 
-                _positions = _ledger_to_positions(trades)
+                _positions = trades_to_positions(trades)
 
                 render_section_divider()
 
@@ -414,40 +391,7 @@ with tab2:
 
                 # ⑥ TWR NAV 전체 차트 (AGG 오버레이 + 리밸런싱 수직선)
                 st.markdown("### TWR NAV 차트")
-                paper_c = "#111111" if dark else "#ffffff"
-                plot_c  = "#000000" if dark else "#f8f9fa"
-                axis_c  = "#888888" if dark else "#666666"
-                grid_c  = "rgba(255,255,255,0.08)" if dark else "rgba(0,0,0,0.06)"
-
-                fig = go.Figure()
-                fig.add_trace(go.Scatter(
-                    x=nav_df.index, y=nav_df["Portfolio"],
-                    mode="lines", name="Portfolio (TWR)",
-                    line=dict(color="#3b82f6", width=2),
-                ))
-                if "AGG" in nav_df.columns:
-                    fig.add_trace(go.Scatter(
-                        x=nav_df.index, y=nav_df["AGG"],
-                        mode="lines", name="AGG Benchmark",
-                        line=dict(color="#f59e0b", width=1.5, dash="dot"),
-                    ))
-                for td in trades["date"].dt.normalize().unique():
-                    if td in nav_df.index:
-                        fig.add_vline(
-                            x=td.strftime("%Y-%m-%d"),
-                            line_width=1, line_dash="dash",
-                            line_color="rgba(34,197,94,0.5)",
-                        )
-                fig.update_layout(
-                    title="TWR NAV (기준 100) — 수직선: 리밸런싱",
-                    paper_bgcolor=paper_c, plot_bgcolor=plot_c,
-                    font=dict(color=axis_c),
-                    xaxis=dict(showgrid=True, gridcolor=grid_c, linecolor=axis_c),
-                    yaxis=dict(showgrid=True, gridcolor=grid_c, linecolor=axis_c),
-                    legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=axis_c)),
-                    height=400, margin=dict(l=0, r=0, t=40, b=0),
-                )
-                st.plotly_chart(fig, width="stretch")
+                render_twr_nav_chart(nav_df, trades, dark=dark)
 
                 # ⑦ 성과 분해 — 가격 수익률 / 환율 효과
                 decomp = compute_performance_decomposition(trades, twr_nav)

@@ -53,6 +53,25 @@ FRED API와 시장 데이터 기반으로 채권/리스크 신호를 시각화�
 - **Data Sources**: FRED API, yfinance, Google Sheets API
 - **Environment**: python-dotenv, certifi
 
+## Project Structure
+
+```
+Bond_Portfolio_dashboard/
+├── dashboard.py              # 앱 진입점 (사이드바 + 탭 레이아웃)
+├── config.py                 # 상수 (FRED 시리즈 ID, 레짐 색상, 임계값 등)
+├── data.py                   # FRED API + yfinance 데이터 로딩
+├── signals.py                # 신호·레짐 계산 + 포매팅 헬퍼
+├── portfolio.py              # 포트폴리오 NAV, 손익, 성과지표 계산
+├── ui/
+│   ├── theme.py              # CSS 주입, 다크/라이트 테마 dict
+│   ├── components.py         # 카드, 히어로, 스냅샷, 테이블 등 공통 컴포넌트
+│   ├── charts_signal.py      # 신호 보드 차트 (line, focus, regime history, HY OAS vs VIX)
+│   └── charts_portfolio.py   # 포트폴리오 차트 (NAV, daily return, intraday, pie, TWR NAV)
+└── utils/
+    ├── price_fetcher.py      # yfinance 일간·장중 가격 조회 (공통 유틸)
+    └── trade_ledger.py       # Google Sheets 거래 내역 I/O + TWR NAV 계산 + 성과 분해
+```
+
 ## Setup
 
 ```bash

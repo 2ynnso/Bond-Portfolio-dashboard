@@ -8,42 +8,6 @@ import pandas as pd
 from config import DEFAULT_THRESHOLDS, REGIME_LABELS
 
 
-def safe_zscore(series: pd.Series) -> pd.Series:
-    std = series.std()
-    if pd.isna(std) or std == 0:
-        return pd.Series(index=series.index, data=0.0)
-    return (series - series.mean()) / std
-
-
-def coerce_series(data: pd.DataFrame | pd.Series, preferred_columns: list[str] | None = None) -> pd.Series:
-    if isinstance(data, pd.Series):
-        series = data.copy()
-    else:
-        series = pd.Series(dtype=float)
-        preferred_columns = preferred_columns or []
-        if isinstance(data.columns, pd.MultiIndex):
-            for column in data.columns:
-                if column[-1] in preferred_columns or column[0] in preferred_columns:
-                    series = data[column].copy()
-                    break
-            if series.empty and len(data.columns) > 0:
-                series = data.iloc[:, 0].copy()
-        else:
-            for column in preferred_columns:
-                if column in data.columns:
-                    series = data[column].copy()
-                    break
-            if series.empty and len(data.columns) > 0:
-                series = data.iloc[:, 0].copy()
-
-    if isinstance(series, pd.DataFrame):
-        series = series.iloc[:, 0]
-
-    series = pd.to_numeric(series, errors="coerce")
-    series.index = pd.to_datetime(series.index)
-    return series.dropna().sort_index()
-
-
 def format_value(value: float, suffix: str = "", decimals: int = 2) -> str:
     if pd.isna(value):
         return "N/A"

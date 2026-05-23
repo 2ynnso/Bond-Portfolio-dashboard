@@ -11,11 +11,7 @@ try:
 except ImportError:
     _GSPREAD_AVAILABLE = False
 
-try:
-    import yfinance as yf
-    _YF_AVAILABLE = True
-except ImportError:
-    _YF_AVAILABLE = False
+from utils.price_fetcher import fetch_price_history as _fetch_history
 
 _SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -101,35 +97,6 @@ def append_trade(
     except Exception as e:
         st.error(f"Google Sheets 저장 실패: {e}")
         return False
-
-
-# ── Price helpers ──────────────────────────────────────────────────────────────
-
-@st.cache_data(ttl=1800, show_spinner=False)
-def _fetch_history(ticker: str, start: str) -> pd.Series:
-    """Fetch daily adjusted close prices via yfinance."""
-    if not _YF_AVAILABLE:
-        return pd.Series(dtype=float, name=ticker)
-    try:
-        raw = yf.download(
-            ticker, start=start, auto_adjust=True,
-            progress=False, threads=False, timeout=20,
-        )
-        if raw.empty:
-            return pd.Series(dtype=float, name=ticker)
-        if isinstance(raw.columns, pd.MultiIndex):
-            close_cols = [c for c in raw.columns if c[0] == "Close"]
-            s = raw[close_cols[0]] if close_cols else raw.iloc[:, 0]
-        else:
-            s = raw.get("Close", raw.iloc[:, 0])
-        if isinstance(s, pd.DataFrame):
-            s = s.squeeze()
-        s = pd.to_numeric(s, errors="coerce").dropna()
-        s.index = pd.to_datetime(s.index).tz_localize(None)
-        s.name = ticker
-        return s
-    except Exception:
-        return pd.Series(dtype=float, name=ticker)
 
 
 def _value_at(holdings: dict[str, float], prices: dict[str, pd.Series], fx: pd.Series, t: pd.Timestamp) -> float:
@@ -342,3 +309,29 @@ def compute_performance_decomposition(
         })
 
     return pd.DataFrame(rows)
+
+
+# ── Trade ledger → positions converter ───────────────────────────────────────
+
+def trades_to_positions(trades_df: pd.DataFrame) -> list[dict]:
+    """Convert trade ledger rows to portfolio.py-compatible positions list."""
+    if trades_df.empty:
+        return []
+    df = trades_df.copy()
+    df["date"] = pd.to_datetime(df["date"])
+    df = df.sort_values("date")
+    positions = []
+    for ticker, group in df.groupby("ticker"):
+        buys = group[group["action"].str.upper() == "BUY"]
+        sells = group[group["action"].str.upper() == "SELL"]
+        net_qty = float(buys["quantity"].sum()) - float(sells["quantity"].sum())
+        if net_qty <= 0 or buys.empty:
+            continue
+        first = buys.iloc[0]
+        positions.append({
+            "ticker": str(ticker),
+            "buy_date": first["date"].date(),
+            "currency": "USD",
+            "amount": float(first["quantity"]) * float(first["price_usd"]),
+        })
+    return positions
