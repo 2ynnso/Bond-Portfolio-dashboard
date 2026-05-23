@@ -2,15 +2,34 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from threading import Lock
 
 import numpy as np
 import pandas as pd
 import requests
 import certifi
-import streamlit as st
+from cachetools import TTLCache, cached
+from cachetools.keys import hashkey
 from dotenv import load_dotenv
 
 from config import FRED_SERIES
+
+try:
+    import yfinance as yf
+except Exception:
+    yf = None
+
+ENV_PATH = Path(__file__).with_name(".env")
+load_dotenv(ENV_PATH)
+
+_fred_cache = TTLCache(maxsize=8, ttl=1800)
+_fred_lock = Lock()
+
+_yf_cache = TTLCache(maxsize=16, ttl=1800)
+_yf_lock = Lock()
+
+_ppr_cache = TTLCache(maxsize=8, ttl=1800)
+_ppr_lock = Lock()
 
 
 def safe_zscore(series: pd.Series) -> pd.Series:
@@ -48,28 +67,24 @@ def coerce_series(data: pd.DataFrame | pd.Series, preferred_columns: list[str] |
     series.index = pd.to_datetime(series.index)
     return series.dropna().sort_index()
 
-try:
-    import yfinance as yf
-except Exception:  # noqa: BLE001
-    yf = None
-
-ENV_PATH = Path(__file__).with_name(".env")
-load_dotenv(ENV_PATH)
-
 
 def get_fred_api_key() -> str:
     env_key = os.getenv("FRED_API_KEY", "").strip()
     if env_key:
         return env_key
     try:
-        secret_key = st.secrets.get("FRED_API_KEY", "").strip()
-    except Exception:  # noqa: BLE001
-        secret_key = ""
-    return secret_key
+        import streamlit as st
+        return st.secrets.get("FRED_API_KEY", "").strip()
+    except Exception:
+        return ""
 
 
-@st.cache_data(ttl=1800, show_spinner=False)
-def fetch_fred_api(start_date: pd.Timestamp, api_key: str) -> tuple[pd.DataFrame, list[str]]:
+def _yf_cache_key(ticker, start_date, preferred_columns):
+    return hashkey(ticker, start_date, tuple(preferred_columns or []))
+
+
+@cached(cache=_fred_cache, lock=_fred_lock)
+def fetch_fred_series(start_date: pd.Timestamp, api_key: str) -> tuple[pd.DataFrame, list[str]]:
     frames: list[pd.Series] = []
     warnings: list[str] = []
 
@@ -98,7 +113,7 @@ def fetch_fred_api(start_date: pd.Timestamp, api_key: str) -> tuple[pd.DataFrame
                 name=name,
             )
             frames.append(series)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             warnings.append(f"{name} 로드 실패: {exc}")
 
     if not frames:
@@ -106,11 +121,10 @@ def fetch_fred_api(start_date: pd.Timestamp, api_key: str) -> tuple[pd.DataFrame
 
     macro = pd.concat(frames, axis=1).sort_index().ffill()
     macro["HY_OAS_Z"] = safe_zscore(macro["HY_OAS"])
-    # OAS_Z는 rolling window가 가변적이므로 캐시 밖(compute_oas_z)에서 계산
     return macro, warnings
 
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@cached(cache=_yf_cache, lock=_yf_lock, key=_yf_cache_key)
 def fetch_yfinance_series(
     ticker: str,
     start_date: pd.Timestamp,
@@ -128,7 +142,7 @@ def fetch_yfinance_series(
             threads=False,
             timeout=20,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return pd.Series(dtype=float), [f"{ticker} 로드 실패: {exc}"]
 
     if data.empty:
@@ -143,13 +157,12 @@ def fetch_yfinance_series(
     return series, []
 
 
-@st.cache_data(ttl=1800, show_spinner=False)
+@cached(cache=_ppr_cache, lock=_ppr_lock)
 def fetch_ppr_series(start_date: pd.Timestamp) -> tuple[pd.Series, list[str]]:
     shyg, warnings = fetch_yfinance_series("SHYG", start_date, ["Adj Close", "Close", "SHYG"])
     if shyg.empty:
         return pd.Series(dtype=float), warnings
 
-    # "BME" is deprecated in pandas 2.2+; "ME" (month end) is the replacement
     shyg = shyg.dropna().sort_index().resample("ME").last().ffill()
     rank = shyg.rolling(12, min_periods=6).rank(pct=True)
     ppr = 1 - rank
@@ -159,17 +172,16 @@ def fetch_ppr_series(start_date: pd.Timestamp) -> tuple[pd.Series, list[str]]:
     return ppr, []
 
 
-@st.cache_data(ttl=1800, show_spinner=False)
 def fetch_agg_series(start_date: pd.Timestamp) -> tuple[pd.Series, list[str]]:
     return fetch_yfinance_series("AGG", start_date, ["Adj Close", "Close", "AGG"])
 
 
-def build_dataset(
+def load_macro_data(
     start_date: pd.Timestamp,
     api_key: str,
     include_ppr: bool,
 ) -> tuple[pd.DataFrame, list[str], str]:
-    macro, warnings = fetch_fred_api(start_date, api_key)
+    macro, warnings = fetch_fred_series(start_date, api_key)
     ppr_note = "PPR 비활성화"
 
     if macro.empty:
@@ -193,3 +205,9 @@ def build_dataset(
         macro["PPR"] = np.nan
 
     return macro, warnings, ppr_note
+
+
+# backward-compat alias (dashboard.py가 build_dataset으로 호출)
+build_dataset = load_macro_data
+# backward-compat alias (fetch_fred_api → fetch_fred_series)
+fetch_fred_api = fetch_fred_series

@@ -305,14 +305,21 @@ with tab2:
                     elif t_price <= 0:
                         st.warning("매수가를 입력하세요.")
                     else:
-                        ok = append_trade(str(t_date), t_ticker, t_action, t_qty, t_price, t_fx)
-                        if ok:
-                            st.success(f"{t_date} {t_action} {t_ticker} {t_qty}주 저장 완료.")
-                            st.rerun()
+                        try:
+                            ok = append_trade(str(t_date), t_ticker, t_action, t_qty, t_price, t_fx)
+                            if ok:
+                                st.success(f"{t_date} {t_action} {t_ticker} {t_qty}주 저장 완료.")
+                                st.rerun()
+                        except Exception as exc:
+                            st.error(f"거래 저장 실패: {exc}")
 
         # ── 데이터 로드 & 계산 ────────────────────────────────────────────────
-        with st.spinner("Google Sheets에서 거래 데이터 불러오는 중..."):
-            trades = load_trades()
+        try:
+            with st.spinner("Google Sheets에서 거래 데이터 불러오는 중..."):
+                trades = load_trades()
+        except Exception as exc:
+            st.error(f"거래 데이터 로드 실패: {exc}")
+            trades = pd.DataFrame()
 
         if trades.empty:
             st.info("저장된 거래 내역이 없습니다. 위 폼에서 거래를 입력하세요.")

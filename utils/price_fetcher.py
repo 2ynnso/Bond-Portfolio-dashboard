@@ -1,15 +1,24 @@
 from __future__ import annotations
 
+from threading import Lock
+
 import pandas as pd
-import streamlit as st
+from cachetools import TTLCache, cached
+from cachetools.keys import hashkey
 
 try:
     import yfinance as yf
 except Exception:
     yf = None
 
+_hist_cache = TTLCache(maxsize=64, ttl=1800)
+_hist_lock = Lock()
 
-@st.cache_data(ttl=1800, show_spinner=False)
+_intraday_cache = TTLCache(maxsize=32, ttl=300)
+_intraday_lock = Lock()
+
+
+@cached(cache=_hist_cache, lock=_hist_lock)
 def fetch_price_history(ticker: str, start: str) -> pd.Series:
     """Fetch daily adjusted close prices via yfinance."""
     if yf is None:
@@ -48,7 +57,7 @@ def fetch_price_history(ticker: str, start: str) -> pd.Series:
         return pd.Series(dtype=float, name=ticker)
 
 
-@st.cache_data(ttl=300, show_spinner=False)
+@cached(cache=_intraday_cache, lock=_intraday_lock)
 def fetch_intraday(ticker: str) -> pd.Series:
     """Fetch today's 5-minute close prices, converted to US/Eastern time."""
     if yf is None:

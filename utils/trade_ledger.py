@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import json
+import os
+from threading import Lock
+
 import numpy as np
 import pandas as pd
-import streamlit as st
+from cachetools import TTLCache, cached
+
+from utils.price_fetcher import fetch_price_history as _fetch_history
 
 try:
     import gspread
@@ -10,8 +16,6 @@ try:
     _GSPREAD_AVAILABLE = True
 except ImportError:
     _GSPREAD_AVAILABLE = False
-
-from utils.price_fetcher import fetch_price_history as _fetch_history
 
 _SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -21,59 +25,83 @@ _SHEET_COLS = ["date", "ticker", "action", "quantity", "price_usd", "fx_rate_krw
 _NAV_BASE = 100.0
 _FX_TICKER = "KRW=X"
 
+_trades_cache = TTLCache(maxsize=4, ttl=60)
+_trades_lock = Lock()
+
+
+# ── Credentials helpers ───────────────────────────────────────────────────────
+
+def _load_service_account_info() -> dict:
+    """Load Google service account info from env var or st.secrets fallback."""
+    json_str = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", "").strip()
+    if json_str:
+        return json.loads(json_str)
+    try:
+        import streamlit as st
+        return dict(st.secrets["gcp_service_account"])
+    except Exception:
+        raise RuntimeError("Google service account credentials not configured. "
+                           "Set GOOGLE_SERVICE_ACCOUNT_JSON env var.")
+
+
+def _load_spreadsheet_id() -> str:
+    """Load Google Sheets spreadsheet ID from env var or st.secrets fallback."""
+    sid = os.getenv("GSHEETS_SPREADSHEET_ID", "").strip()
+    if sid:
+        return sid
+    try:
+        import streamlit as st
+        return st.secrets["gsheets"]["spreadsheet_id"]
+    except Exception:
+        raise RuntimeError("GSHEETS_SPREADSHEET_ID not configured.")
+
 
 # ── Google Sheets helpers ──────────────────────────────────────────────────────
 
 def _get_sheets_client():
-    """Build gspread client from st.secrets service account info."""
     if not _GSPREAD_AVAILABLE:
         raise RuntimeError("gspread / google-auth not installed")
-    creds_dict = dict(st.secrets["gcp_service_account"])
-    creds = Credentials.from_service_account_info(creds_dict, scopes=_SCOPES)
+    creds = Credentials.from_service_account_info(_load_service_account_info(), scopes=_SCOPES)
     return gspread.authorize(creds)
 
 
 def _get_worksheet():
-    """Return the first worksheet of the configured spreadsheet."""
     client = _get_sheets_client()
-    spreadsheet_id = st.secrets["gsheets"]["spreadsheet_id"]
-    sh = client.open_by_key(spreadsheet_id)
+    sh = client.open_by_key(_load_spreadsheet_id())
     return sh.sheet1
 
 
 def is_gsheets_configured() -> bool:
-    """True if secrets contain the required Google Sheets keys."""
+    if os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON") and os.getenv("GSHEETS_SPREADSHEET_ID"):
+        return True
     try:
+        import streamlit as st
         _ = st.secrets["gcp_service_account"]
         _ = st.secrets["gsheets"]["spreadsheet_id"]
         return True
-    except (KeyError, Exception):
+    except Exception:
         return False
 
 
-@st.cache_data(ttl=60, show_spinner=False)
+@cached(cache=_trades_cache, lock=_trades_lock)
 def load_trades() -> pd.DataFrame:
-    """Load all trade rows from Google Sheets. Returns empty DataFrame on failure."""
-    try:
-        ws = _get_worksheet()
-        records = ws.get_all_records()
-        if not records:
-            return pd.DataFrame(columns=_SHEET_COLS)
-        df = pd.DataFrame(records)
-        for col in _SHEET_COLS:
-            if col not in df.columns:
-                df[col] = None
-        df = df[_SHEET_COLS].copy()
-        df["date"] = pd.to_datetime(df["date"], errors="coerce")
-        df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce")
-        df["price_usd"] = pd.to_numeric(df["price_usd"], errors="coerce")
-        df["fx_rate_krw"] = pd.to_numeric(df["fx_rate_krw"], errors="coerce")
-        df["action"] = df["action"].astype(str).str.upper()
-        df["ticker"] = df["ticker"].astype(str).str.upper()
-        return df.dropna(subset=["date", "ticker", "quantity"]).reset_index(drop=True)
-    except Exception as e:
-        st.error(f"Google Sheets 로드 실패: {e}")
+    """Load all trade rows from Google Sheets. Raises on failure."""
+    ws = _get_worksheet()
+    records = ws.get_all_records()
+    if not records:
         return pd.DataFrame(columns=_SHEET_COLS)
+    df = pd.DataFrame(records)
+    for col in _SHEET_COLS:
+        if col not in df.columns:
+            df[col] = None
+    df = df[_SHEET_COLS].copy()
+    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce")
+    df["price_usd"] = pd.to_numeric(df["price_usd"], errors="coerce")
+    df["fx_rate_krw"] = pd.to_numeric(df["fx_rate_krw"], errors="coerce")
+    df["action"] = df["action"].astype(str).str.upper()
+    df["ticker"] = df["ticker"].astype(str).str.upper()
+    return df.dropna(subset=["date", "ticker", "quantity"]).reset_index(drop=True)
 
 
 def append_trade(
@@ -85,33 +113,27 @@ def append_trade(
     fx_rate_krw: float,
 ) -> bool:
     """Append one trade row to the Google Sheet. Returns True on success."""
-    try:
-        ws = _get_worksheet()
-        existing = ws.get_all_values()
-        if not existing:
-            ws.append_row(_SHEET_COLS)
-        ws.append_row([date, ticker.upper(), action.upper(), quantity, price_usd, fx_rate_krw])
-        # Invalidate cache so the next load_trades() call fetches fresh data
-        load_trades.clear()
-        return True
-    except Exception as e:
-        st.error(f"Google Sheets 저장 실패: {e}")
-        return False
+    ws = _get_worksheet()
+    existing = ws.get_all_values()
+    if not existing:
+        ws.append_row(_SHEET_COLS)
+    ws.append_row([date, ticker.upper(), action.upper(), quantity, price_usd, fx_rate_krw])
+    _trades_cache.clear()
+    return True
 
+
+# ── Price helpers ──────────────────────────────────────────────────────────────
 
 def _value_at(holdings: dict[str, float], prices: dict[str, pd.Series], fx: pd.Series, t: pd.Timestamp) -> float:
-    """Sum holdings × price × fx_rate at timestamp t (KRW)."""
     total = 0.0
     for tkr, qty in holdings.items():
         p_series = prices.get(tkr)
         if p_series is None or p_series.empty:
             return float("nan")
-        # Use last available price on or before t
         available = p_series[p_series.index <= t]
         if available.empty:
             return float("nan")
         price = float(available.iloc[-1])
-
         fx_available = fx[fx.index <= t]
         fx_rate = float(fx_available.iloc[-1]) if not fx_available.empty else float("nan")
         if np.isnan(fx_rate) or np.isnan(price):
@@ -129,11 +151,6 @@ def compute_twr_nav(trades_df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     TWR splits the measurement period at each trade date.  Within each
     sub-period holdings are fixed; returns from different sub-periods are
     geometrically linked so that external cash flows don't distort performance.
-
-    Returns
-    -------
-    nav_df  : DataFrame with columns ["TWR_NAV", "KRW_Value", "IEF"]
-    warnings: list of human-readable warning strings
     """
     warns: list[str] = []
 
@@ -150,7 +167,6 @@ def compute_twr_nav(trades_df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     start_str = trade_dates[0].strftime("%Y-%m-%d")
     end_date = pd.Timestamp.today().normalize()
 
-    # Fetch price histories
     prices: dict[str, pd.Series] = {}
     for tkr in tickers:
         s = _fetch_history(tkr, start_str)
@@ -168,27 +184,21 @@ def compute_twr_nav(trades_df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         date_range = pd.bdate_range(trade_dates[0], end_date)
         fx = pd.Series(1350.0, index=date_range, name=_FX_TICKER)
 
-    # Build all business days
     all_dates = pd.bdate_range(trade_dates[0], end_date)
-
-    # TWR linking: iterate over sub-periods
-    # Sub-period i: [trade_dates[i], trade_dates[i+1])
-    # Holdings are constant within a sub-period (fixed after executing trades on trade_dates[i])
 
     nav_series: dict[pd.Timestamp, float] = {}
     value_series: dict[pd.Timestamp, float] = {}
 
     holdings: dict[str, float] = {}
-    nav_anchor = _NAV_BASE   # NAV level at start of current sub-period
-    base_value: float | None = None   # portfolio KRW value at sub-period start
+    nav_anchor = _NAV_BASE
+    base_value: float | None = None
 
-    boundaries = list(trade_dates) + [None]   # None marks the terminal sentinel
+    boundaries = list(trade_dates) + [None]
 
     for idx, trade_date in enumerate(boundaries):
-        # ── Fill daily NAV for the previous sub-period ──────────────────────
         if base_value is not None and base_value > 0 and holdings:
             sub_start = trade_dates[idx - 1] if idx > 0 else trade_dates[0]
-            sub_end_excl = trade_date  # exclusive; None means through end_date
+            sub_end_excl = trade_date
 
             day_filter = (all_dates >= sub_start)
             if sub_end_excl is not None:
@@ -203,14 +213,11 @@ def compute_twr_nav(trades_df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         if trade_date is None:
             break
 
-        # ── Compute NAV just before executing today's trades ─────────────────
-        # This links the previous sub-period return into nav_anchor.
         if base_value is not None and base_value > 0 and holdings:
             val_before = _value_at(holdings, prices, fx, trade_date)
             if not np.isnan(val_before):
                 nav_anchor = nav_anchor * val_before / base_value
 
-        # ── Execute trades on trade_date ──────────────────────────────────────
         day_trades = df[df["date"].dt.normalize() == trade_date]
         for _, row in day_trades.iterrows():
             tkr = str(row["ticker"]).strip().upper()
@@ -223,7 +230,6 @@ def compute_twr_nav(trades_df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
                 if holdings.get(tkr, 0.0) <= 0:
                     holdings.pop(tkr, None)
 
-        # ── Set new sub-period base using post-trade value ────────────────────
         val_after = _value_at(holdings, prices, fx, trade_date)
         base_value = val_after if not np.isnan(val_after) else None
 
@@ -235,7 +241,6 @@ def compute_twr_nav(trades_df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         "KRW_Value": pd.Series(value_series),
     }).sort_index()
 
-    # ── AGG benchmark overlay ─────────────────────────────────────────────────
     agg = _fetch_history("AGG", start_str)
     if not agg.empty:
         agg_aligned = agg.reindex(nav_df.index).ffill().bfill()
@@ -252,14 +257,6 @@ def compute_performance_decomposition(
     trades_df: pd.DataFrame,
     nav_df: pd.DataFrame,
 ) -> pd.DataFrame:
-    """
-    Approximate decomposition of total KRW return into:
-      - Price return (USD price change, FX held at purchase rate)
-      - FX effect (USD price held at purchase, FX varies)
-      - Interaction (residual)
-
-    Returns a DataFrame with one row per ticker.
-    """
     if trades_df.empty or nav_df.empty:
         return pd.DataFrame()
 
@@ -291,11 +288,6 @@ def compute_performance_decomposition(
         total_ret_krw = (
             (current_price * current_fx) / (buy_price * buy_fx) - 1
             if not np.isnan(buy_fx) and buy_fx > 0 and buy_price > 0
-            else float("nan")
-        )
-        interaction = (
-            total_ret_krw - price_ret_usd - fx_ret
-            if not any(np.isnan(x) for x in [total_ret_krw, price_ret_usd, fx_ret])
             else float("nan")
         )
 
